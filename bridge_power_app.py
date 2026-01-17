@@ -4,13 +4,12 @@ import numpy as np
 import math
 
 # --- CONFIGURACIÓN DE PÁGINA ---
-st.set_page_config(page_title="Bridge Power Design Engine V8.0", page_icon="🏭", layout="wide")
+st.set_page_config(page_title="Bridge Power Design Engine V9.2", page_icon="🏭", layout="wide")
 
 # ==============================================================================
 # 0. CONFIGURACIÓN GLOBAL (IDIOMA Y UNIDADES)
 # ==============================================================================
 
-# Contenedor para selectores globales
 with st.sidebar:
     st.header("Global Settings")
     c_lang, c_unit = st.columns(2)
@@ -19,14 +18,14 @@ with st.sidebar:
 
 is_imperial = "Imperial" in unit_system
 
-# Definición de Unidades y Factores de Conversión para Visualización
+# Unidades de Visualización
 if is_imperial:
     u_temp = "°F"
     u_dist = "ft"
     u_area_s = "ft²"
     u_area_l = "Acres"
     u_vol = "gal"
-    u_mass = "Short Tons" # Tonelada corta
+    u_mass = "Short Tons" 
     u_alt = "ft"
 else:
     u_temp = "°C"
@@ -34,14 +33,16 @@ else:
     u_area_s = "m²"
     u_area_l = "Ha"
     u_vol = "L"
-    u_mass = "Tonnes" # Tonelada métrica
+    u_mass = "Tonnes"
     u_alt = "msnm"
 
-# Diccionario de Traducción (Ajustado para aceptar unidades dinámicas)
+# Diccionario de Traducción COMPLETO
 tr = {
     "Español": {
-        "title": "🏭 Bridge Power Design Engine V8.0",
-        "subtitle": "**Suite de Ingeniería Total.**\nIntegra: Huella Física (Workshop Caso 2), Logística SCR, Modelo Acústico y Conversión de Unidades.",
+        "title": "🏭 Bridge Power Design Engine V9.2",
+        "subtitle": "**Suite de Ingeniería Total.**\nCalcula: Disponibilidad (N+M+S), BESS, Logística Urea, Huella Física y Económicos.",
+        
+        # Sidebar
         "sb_1_title": "1. Perfil del Data Center",
         "dc_type_label": "Tipo de Data Center",
         "dc_opts": ["AI Factory (Entrenamiento/Inferencia)", "Hyperscale Estándar"],
@@ -50,6 +51,7 @@ tr = {
         "voltage_label": "Tensión de Conexión al Data Center (kV)",
         "dist_loss": "Pérdidas Distribución (%)",
         "aux_load": "Servicios Auxiliares Campus (%)",
+        
         "sb_2_title": "2. Tecnología de Generación",
         "tech_label": "Tecnología Motriz",
         "tech_opts": ["RICE (Motor Reciprocante)", "Turbina de Gas (Aero)"],
@@ -58,38 +60,49 @@ tr = {
         "parasitic": "Consumos Parásitos Gen (%)",
         "step_cap": "Capacidad de Salto de Carga (%)",
         "emi_title": "Emisiones Nativas",
+        
         "sb_3_title": "3. Física de Sitio & Vecinos",
         "cond_atm": "Condiciones Atmosféricas",
         "derate_method": "Método de Derateo",
         "derate_opts": ["Automático", "Manual"],
-        "temp": "Temp. Máx Promedio", # Unidad dinámica
-        "alt": "Altitud", # Unidad dinámica
+        "temp": "Temp. Máx Promedio",
+        "alt": "Altitud",
         "mn": "Índice de Metano (Gas)",
         "manual_derate": "Derateo Manual (%)",
         "urban_int": "Integración Urbana (Vecinos)",
-        "bldg_h": "Altura Edificio Más Alto Cercano", # Unidad dinámica
-        "dist_n": "Distancia al Vecino Más Cercano", # Unidad dinámica
+        "bldg_h": "Altura Edificio Más Alto Cercano",
+        "dist_n": "Distancia al Vecino Más Cercano",
         "n_type": "Tipo de Vecino",
         "n_opts": ["Industrial", "Residencial/Sensible"],
         "source_noise": "Ruido Fuente @ 1m (dBA)",
-        "sb_4_title": "4. Marco Normativo",
+        
+        "sb_4_title": "4. Marco Normativo & Urea",
         "reg_zone": "Zona Regulatoria",
         "reg_opts": ["USA - EPA Major", "USA - Virginia", "EU Standard", "LatAm / No-Reg"],
-        "sb_5_title": "5. Confiabilidad",
+        "urea_days": "Autonomía Almacenamiento Urea (Días)",
+        
+        "sb_5_title": "5. Confiabilidad & BESS",
+        "avail_target": "Disponibilidad Objetivo (%)",
         "use_bess": "Incluir BESS (Inercia Sintética)",
         "maint": "Mantenimiento (%)",
+        
         "sb_6_title": "6. Económicos",
         "fuel_p": "Precio Gas ($/MMBtu)",
+        
+        # Dashboard KPIs
         "kpi_cap": "Capacidad IT",
-        "kpi_site": "Sitio",
         "kpi_hr": "Heat Rate Neto",
         "kpi_eff": "Eff. Real",
         "kpi_area": "Huella Total",
-        "kpi_compl": "Cumplimiento (Ruido/Aire)",
+        "kpi_compl": "Cumplimiento",
+        "kpi_gen_count": "Generadores Requeridos",
+        
         "tab_tech": "⚙️ Ingeniería",
         "tab_area": "🏗️ Huella Física",
         "tab_env": "🧪 Física & Ambiental",
         "tab_fin": "💰 Costos",
+        
+        # Area Breakdown
         "area_breakdown": "Desglos de Áreas (Ref. Workshop Caso 2)",
         "area_gen": "Bloques de Generación",
         "area_bess": "Sistema BESS",
@@ -97,28 +110,35 @@ tr = {
         "area_gas": "Estación de Gas (ERM)",
         "area_scr": "Granja de Urea/SCR",
         "area_roads": "Vialidad y Logística (+20%)",
-        "area_total": "TOTAL ESTIMADO",
+        
+        # Environment & Tech Labels
         "acoustic_model": "🔊 Modelo Acústico",
         "source_noise_lbl": "Ruido Fuente",
-        "attenuation": "Atenuación por Distancia",
         "level_rec": "Nivel en Receptor",
         "limit": "Límite",
         "noise_violation": "🛑 VIOLACIÓN ACÚSTICA",
-        "noise_sol": "Requiere Barreras o Silenciadores Hospitalarios",
+        
         "disp_model": "💨 Dispersión & Emisiones",
-        "min_stack": "Altura Mínima Chimenea",
+        "min_stack": "Altura Mínima Chimenea",  # <--- AQUÍ ESTÁ LA CORRECCIÓN
         "warn_scr": "🛑 SE REQUIERE SCR (Urea)",
         "cons_urea": "Consumo Urea",
+        "store_urea": "Almacenamiento Urea",
+        "tank_urea": "Tanques Requeridos",
         "log_trucks": "Logística Camiones",
+        
+        "bess_sizing": "Dimensionamiento BESS",
+        "bess_pow": "Potencia BESS",
+        "bess_ene": "Energía BESS (2h)",
+        
         "status_ok": "✅ OK",
         "status_fail": "🛑 FALLA",
-        "aux_impact": "Impacto de Auxiliares:",
         "cost_fuel": "Costo Combustible",
-        "warn_fuel": "Costo alto por ineficiencia de Reserva Rodante."
+        "warn_fuel": "Costo alto por ineficiencia de Reserva Rodante.",
+        "aux_impact": "Impacto de Auxiliares:"
     },
     "English": {
-        "title": "🏭 Bridge Power Design Engine V8.0",
-        "subtitle": "**Total Engineering Suite.**\nIntegrates: Physical Footprint (Workshop Case 2), SCR Logistics (Urea), Acoustic Model, Unit Conversion.",
+        "title": "🏭 Bridge Power Design Engine V9.2",
+        "subtitle": "**Total Engineering Suite.**\nCalculates: Availability (N+M+S), BESS, Urea Logistics, Footprint, and Economics.",
         "sb_1_title": "1. Data Center Profile",
         "dc_type_label": "Data Center Type",
         "dc_opts": ["AI Factory (Training/Inference)", "Standard Hyperscale"],
@@ -149,24 +169,29 @@ tr = {
         "n_type": "Neighbor Type",
         "n_opts": ["Industrial", "Residential/Sensitive"],
         "source_noise": "Source Noise @ 1m (dBA)",
-        "sb_4_title": "4. Regulatory Framework",
+        "sb_4_title": "4. Regulatory Framework & Urea",
         "reg_zone": "Regulatory Zone",
         "reg_opts": ["USA - EPA Major", "USA - Virginia", "EU Standard", "LatAm / Unregulated"],
-        "sb_5_title": "5. Reliability",
+        "urea_days": "Urea Storage Autonomy (Days)",
+        "sb_5_title": "5. Reliability & BESS",
+        "avail_target": "Availability Target (%)",
         "use_bess": "Include BESS (Synthetic Inertia)",
         "maint": "Maintenance Unavailability (%)",
         "sb_6_title": "6. Economics",
         "fuel_p": "Gas Price ($/MMBtu)",
+        
         "kpi_cap": "IT Capacity",
-        "kpi_site": "Site",
         "kpi_hr": "Net Heat Rate",
         "kpi_eff": "Real Eff",
         "kpi_area": "Total Footprint",
-        "kpi_compl": "Compliance (Noise/Air)",
+        "kpi_compl": "Compliance",
+        "kpi_gen_count": "Generators Required",
+        
         "tab_tech": "⚙️ Engineering",
         "tab_area": "🏗️ Physical Footprint",
         "tab_env": "🧪 Physics & Env",
         "tab_fin": "💰 Costs",
+        
         "area_breakdown": "Area Breakdown (Ref. Workshop Case 2)",
         "area_gen": "Generation Blocks",
         "area_bess": "BESS System",
@@ -174,24 +199,30 @@ tr = {
         "area_gas": "Gas Station (ERM)",
         "area_scr": "Urea/SCR Farm",
         "area_roads": "Roads & Logistics (+20%)",
-        "area_total": "TOTAL ESTIMATED",
+        
         "acoustic_model": "🔊 Acoustic Model",
         "source_noise_lbl": "Source Noise",
-        "attenuation": "Distance Attenuation",
         "level_rec": "Receiver Level",
         "limit": "Limit",
         "noise_violation": "🛑 ACOUSTIC VIOLATION",
-        "noise_sol": "Requires Barriers or Hospital-Grade Silencers",
+        
         "disp_model": "💨 Dispersion & Emissions",
-        "min_stack": "Min Stack Height",
+        "min_stack": "Min Stack Height", # <--- CORRECTION HERE
         "warn_scr": "🛑 SCR REQUIRED (Urea)",
         "cons_urea": "Urea Consumption",
+        "store_urea": "Urea Storage",
+        "tank_urea": "Tanks Required",
         "log_trucks": "Truck Logistics",
+        
+        "bess_sizing": "BESS Sizing",
+        "bess_pow": "BESS Power",
+        "bess_ene": "BESS Energy (2h)",
+        
         "status_ok": "✅ OK",
         "status_fail": "🛑 FAIL",
-        "aux_impact": "Auxiliary Impact:",
         "cost_fuel": "Fuel Cost",
-        "warn_fuel": "High cost due to Spinning Reserve inefficiency."
+        "warn_fuel": "High cost due to Spinning Reserve inefficiency.",
+        "aux_impact": "Auxiliary Impact:"
     }
 }
 
@@ -201,16 +232,21 @@ st.title(t["title"])
 st.markdown(t["subtitle"])
 
 # ==============================================================================
-# 1. INPUTS (SIDEBAR) - CON LÓGICA DE CONVERSIÓN
+# 1. INPUTS (SIDEBAR)
 # ==============================================================================
 
 with st.sidebar:
     st.header(t["sb_1_title"])
+    # 1.1 Selección Tipo DC
     dc_type_sel = st.selectbox(t["dc_type_label"], t["dc_opts"])
     is_ai = "AI" in dc_type_sel or "IA" in dc_type_sel
+    
+    # Defaults Inteligentes según Tipo DC
+    def_step_load = 40.0 if is_ai else 10.0
+    def_use_bess = True if is_ai else False
+    
     p_max = st.number_input(t["p_max"], 10.0, 1000.0, 100.0, step=10.0)
-    step_def = 30.0 if is_ai else 15.0
-    step_load_req = st.number_input(t["step_load"], 0.0, 100.0, step_def)
+    step_load_req = st.number_input(t["step_load"], 0.0, 100.0, def_step_load)
     voltage_kv = st.number_input(t["voltage_label"], 0.4, 500.0, 34.5, step=0.5)
     dist_loss_pct = st.number_input(t["dist_loss"], 0.0, 10.0, 3.0) / 100
     aux_load_pct = st.number_input(t["aux_load"], 0.0, 15.0, 2.5) / 100
@@ -258,27 +294,22 @@ with st.sidebar:
     
     derate_factor_calc = 1.0
     
-    # --- LOGICA DE ENTRADA MÉTRICA VS IMPERIAL ---
-    # Convertimos todo a METRICO para el motor de cálculo
+    # Lógica Imperial/Métrica
     site_alt_m = 0
     site_temp_c = 30
     
     if is_auto_derate:
         if is_imperial:
-            # Entradas en Fahrenheit y Pies
             site_temp_f = st.slider(f"{t['temp']} ({u_temp})", 32, 122, 86)
             site_alt_ft = st.number_input(f"{t['alt']} ({u_alt})", 0, 13000, 328)
-            # Conversión a Métrico
             site_temp_c = (site_temp_f - 32) * 5/9
             site_alt_m = site_alt_ft / 3.28084
         else:
-            # Entradas Métricas
             site_temp_c = st.slider(f"{t['temp']} ({u_temp})", 0, 50, 30)
             site_alt_m = st.number_input(f"{t['alt']} ({u_alt})", 0, 4000, 100)
             
         methane_number = st.number_input(t["mn"], 30, 100, 80)
         
-        # Lógica Derate (usa valores métricos)
         loss_temp = max(0, (site_temp_c - 25) * 0.01) if is_rice else max(0, (site_temp_c - 15) * 0.007)
         loss_alt = max(0, (site_alt_m - 100) * 0.0001) 
         loss_mn = max(0, (75 - methane_number) * 0.02) if is_rice else 0
@@ -291,12 +322,9 @@ with st.sidebar:
     unit_size_site = unit_size_iso * derate_factor_calc
 
     st.subheader(t["urban_int"])
-    
-    # Entradas de Distancia (Métrico o Imperial)
     if is_imperial:
         nearby_bldg_ft = st.number_input(f"{t['bldg_h']} ({u_dist})", 15.0, 350.0, 40.0)
         dist_neighbor_ft = st.number_input(f"{t['dist_n']} ({u_dist})", 30.0, 6500.0, 328.0)
-        # Conversión a Métrico
         nearby_building_h_m = nearby_bldg_ft / 3.28084
         dist_neighbor_m = dist_neighbor_ft / 3.28084
     else:
@@ -311,21 +339,25 @@ with st.sidebar:
 
     st.header(t["sb_4_title"])
     reg_zone = st.selectbox(t["reg_zone"], t["reg_opts"])
-    
     if "EPA Major" in reg_zone: limit_nox_tpy = 250.0
     elif "Virginia" in reg_zone: limit_nox_tpy = 100.0
     elif "EU" in reg_zone: limit_nox_tpy = 150.0
     else: limit_nox_tpy = 9999.0
+    
+    # Nuevo Input Urea Days
+    urea_days = st.number_input(t["urea_days"], 1, 30, 7)
 
     st.header(t["sb_5_title"])
-    use_bess = st.checkbox(t["use_bess"], value=True)
+    # Nuevo Input Disponibilidad
+    avail_target = st.number_input(t["avail_target"], 90.00, 99.99999, 99.999, format="%.5f")
+    use_bess = st.checkbox(t["use_bess"], value=def_use_bess)
     maint_unav = st.number_input(t["maint"], 0.0, 20.0, def_maint) / 100
     
     st.header(t["sb_6_title"])
     fuel_price = st.number_input(t["fuel_p"], 1.0, 20.0, 4.0)
 
 # ==============================================================================
-# 2. MOTOR DE CÁLCULO (TODO EN SI/MÉTRICO)
+# 2. MOTOR DE CÁLCULO
 # ==============================================================================
 
 # A. CARGA
@@ -334,22 +366,42 @@ p_dist_loss = (p_max + p_aux_mw) * dist_loss_pct
 p_net_gen_req = p_max + p_aux_mw + p_dist_loss 
 p_gross_gen_req = p_net_gen_req / (1 - parasitic_pct)
 
-# B. FLOTA
+# B. FLOTA & DISPONIBILIDAD
 n_base = math.ceil(p_gross_gen_req / unit_size_site)
 req_step_mw = p_max * (step_load_req / 100.0)
+
+# Cálculo de Redundancia Mínima por Disponibilidad
+min_redundancy = 1
+if avail_target >= 99.99:
+    min_redundancy = 2
+
 n_spin = 0
 bess_mw = 0
 bess_mwh = 0
 
 if use_bess:
+    # BESS maneja el transitorio
     bess_mw = req_step_mw + unit_size_site 
     bess_mwh = bess_mw * 2 
-    n_spin = 1 
+    # Spin cubre solo N+1/N+2 por disponibilidad
+    n_spin = min_redundancy
 else:
+    # Spin maneja transitorio Y disponibilidad
     step_cap_mw_per_unit = unit_size_site * (gen_step_cap / 100.0)
-    min_units_step = math.ceil(req_step_mw / step_cap_mw_per_unit)
-    if min_units_step > n_base: n_spin = min_units_step - n_base
-    if ((n_base + n_spin) * unit_size_site) < (p_gross_gen_req + unit_size_site): n_spin += 1
+    
+    n_spin_step = 0
+    current_n = n_base
+    while True:
+        total_mw = current_n * unit_size_site
+        total_step_cap = total_mw * (gen_step_cap / 100.0)
+        if total_step_cap >= req_step_mw:
+            break
+        current_n += 1
+        n_spin_step += 1
+    
+    n_spin = max(n_spin_step, min_redundancy)
+    if ((n_base + n_spin - min_redundancy) * unit_size_site) < p_gross_gen_req:
+        n_spin += 1
 
 n_online = n_base + n_spin
 n_maint = math.ceil(n_online * maint_unav)
@@ -371,20 +423,27 @@ hours_yr = 8760
 nox_tpy_raw = (raw_nox * total_bhp_online * hours_yr) / 907185
 req_scr = nox_tpy_raw > limit_nox_tpy
 
+# Lógica Logística Urea
 urea_l_yr = 0
+urea_storage_l = 0
+num_tanks = 0
 trucks_yr = 0
+
 if req_scr:
     urea_l_hr = p_gross_gen_req * 1.5 
     urea_l_yr = urea_l_hr * 8760
+    urea_storage_l = (urea_l_yr / 365) * urea_days
+    tank_size_l = 30000 
+    num_tanks = math.ceil(urea_storage_l / tank_size_l)
     trucks_yr = math.ceil(urea_l_yr / 25000)
 
-# D. ÁREAS (M2)
+# D. ÁREAS
 area_factor_gen = 140.0 if is_rice else 200.0 
 area_gen = n_total * area_factor_gen
 area_bess = bess_mwh * 25.0
 area_sub = 5500.0 if voltage_kv >= 115 else 2500.0
 area_gas = 800.0
-area_scr = 400.0 if req_scr else 0.0
+area_scr = (400.0 + (num_tanks * 50)) if req_scr else 0.0
 area_subtotal = area_gen + area_bess + area_sub + area_gas + area_scr
 area_roads = area_subtotal * 0.20 
 area_total_m2 = area_subtotal + area_roads
@@ -408,10 +467,9 @@ fuel_cost_hr = (fuel_btu_hr / 1e6) * fuel_price
 cost_kwh = fuel_cost_hr / (p_max * 1000)
 
 # ==============================================================================
-# 3. DASHBOARD (CON CONVERSIÓN DE SALIDA)
+# 3. DASHBOARD (CONVERSIÓN DE SALIDA)
 # ==============================================================================
 
-# Lógica de Conversión para Visualización
 if is_imperial:
     disp_area_l = area_total_ha * 2.47105 # Acres
     disp_area_s = area_total_m2 * 10.7639 # Sq Ft
@@ -423,7 +481,8 @@ if is_imperial:
     disp_area_rds = area_roads * 10.7639
     disp_area_tot = area_total_m2 * 10.7639
     
-    disp_urea = urea_l_yr * 0.264172 # Gallons
+    disp_urea_yr = urea_l_yr * 0.264172 # Gallons
+    disp_urea_store = urea_storage_l * 0.264172
     disp_stack = min_stack_height_m * 3.28084 # Feet
     disp_dist_n = dist_neighbor_m * 3.28084 # Feet
     
@@ -440,7 +499,8 @@ else:
     disp_area_rds = area_roads
     disp_area_tot = area_total_m2
     
-    disp_urea = urea_l_yr
+    disp_urea_yr = urea_l_yr
+    disp_urea_store = urea_storage_l
     disp_stack = min_stack_height_m
     disp_dist_n = dist_neighbor_m
     
@@ -450,7 +510,7 @@ else:
 # Render
 c1, c2, c3, c4 = st.columns(4)
 c1.metric(t["kpi_cap"], f"{p_max} MW", f"Volt: {voltage_kv} kV")
-c2.metric(t["kpi_hr"], f"{net_system_heat_rate:,.0f} BTU/kWh", f"{t['kpi_eff']}: {real_gen_eff:.1f}%")
+c2.metric(t["kpi_gen_count"], f"{n_total} Units", f"N+M+S: {n_base}+{n_maint}+{n_spin}")
 c3.metric(t["kpi_area"], f"{disp_area_l:.2f} {u_area_l}", f"{disp_area_s:,.0f} {u_area_s}")
 
 status_txt = t["status_ok"]
@@ -470,13 +530,20 @@ with t_tech:
             "MW": [p_max, p_aux_mw, p_dist_loss, (p_gross_gen_req - p_net_gen_req), p_gross_gen_req]
         })
         st.dataframe(df_load.style.format({"MW": "{:.2f}"}), use_container_width=True)
-        st.info(f"{t['aux_impact']} +{p_aux_mw:.2f} MW")
     with col2:
         st.subheader("Flota & Estrategia")
+        st.write(f"**Disponibilidad Objetivo:** {avail_target}%")
+        st.write(f"**Redundancia Mínima:** N+{min_redundancy}")
+        st.markdown("---")
         st.write(f"Unidades Base (N): {n_base}")
         st.write(f"Reserva (S): {n_spin}")
         st.write(f"Mantenimiento (M): {n_maint}")
         st.metric("Total Unidades", n_total)
+        
+        if use_bess:
+            st.markdown("### " + t["bess_sizing"])
+            st.write(f"**{t['bess_pow']}:** {bess_mw:.2f} MW")
+            st.write(f"**{t['bess_ene']}:** {bess_mwh:.2f} MWh")
 
 with t_area:
     st.subheader(t["area_breakdown"])
@@ -496,7 +563,6 @@ with t_env:
         st.write(f"**{t['limit']}:** {noise_limit} dBA")
         if req_attenuation > 0:
             st.error(f"{t['noise_violation']} (-{req_attenuation:.1f} dB)")
-            st.info(t["noise_sol"])
         else:
             st.success(t["status_ok"])
     with col2:
@@ -506,7 +572,9 @@ with t_env:
         
         if req_scr: 
             st.warning(t["warn_scr"])
-            st.write(f"**{t['cons_urea']}:** {disp_urea:,.0f} {u_vol}/yr")
+            st.write(f"**{t['cons_urea']}:** {disp_urea_yr:,.0f} {u_vol}/yr")
+            st.markdown(f"**{t['store_urea']} ({urea_days} days):** {disp_urea_store:,.0f} {u_vol}")
+            st.write(f"**{t['tank_urea']}:** {num_tanks}x 30kL Tanks")
             st.write(f"**{t['log_trucks']}:** {trucks_yr} Trucks/yr")
         
         st.markdown("---")
@@ -514,8 +582,9 @@ with t_env:
 
 with t_fin:
     st.metric(t["cost_fuel"], f"${cost_kwh:.4f} / kWh IT")
+    st.metric(t["kpi_hr"], f"{net_system_heat_rate:,.0f} BTU/kWh")
     if not use_bess and is_ai: st.warning(t["warn_fuel"])
 
 # --- FOOTER ---
 st.markdown("---")
-st.caption("Bridge Power Engine V8.0")
+st.caption("Bridge Power Engine V9.2")
