@@ -3,22 +3,21 @@ import pandas as pd
 import numpy as np
 import math
 
-# --- CONFIGURACIÓN DE PÁGINA ---
-st.set_page_config(page_title="Bridge Power Design Engine V9.2", page_icon="🏭", layout="wide")
+# --- PAGE CONFIGURATION ---
+st.set_page_config(page_title="Bridge Power Design Engine V9.3 (EN)", page_icon="🏭", layout="wide")
 
 # ==============================================================================
-# 0. CONFIGURACIÓN GLOBAL (IDIOMA Y UNIDADES)
+# 0. GLOBAL SETTINGS (UNITS ONLY)
 # ==============================================================================
 
 with st.sidebar:
     st.header("Global Settings")
-    c_lang, c_unit = st.columns(2)
-    lang_option = c_lang.radio("Language", ["Español", "English"])
-    unit_system = c_unit.radio("Units / Unidades", ["Metric (SI)", "Imperial (US)"])
+    # Language selector removed. Defaulting to English.
+    unit_system = st.radio("System of Units", ["Metric (SI)", "Imperial (US)"])
 
 is_imperial = "Imperial" in unit_system
 
-# Unidades de Visualización
+# Unit Definitions
 if is_imperial:
     u_temp = "°F"
     u_dist = "ft"
@@ -34,199 +33,98 @@ else:
     u_area_l = "Ha"
     u_vol = "L"
     u_mass = "Tonnes"
-    u_alt = "msnm"
+    u_alt = "masl"
 
-# Diccionario de Traducción COMPLETO
-tr = {
-    "Español": {
-        "title": "🏭 Bridge Power Design Engine V9.2",
-        "subtitle": "**Suite de Ingeniería Total.**\nCalcula: Disponibilidad (N+M+S), BESS, Logística Urea, Huella Física y Económicos.",
-        
-        # Sidebar
-        "sb_1_title": "1. Perfil del Data Center",
-        "dc_type_label": "Tipo de Data Center",
-        "dc_opts": ["AI Factory (Entrenamiento/Inferencia)", "Hyperscale Estándar"],
-        "p_max": "Carga IT Crítica (MW)",
-        "step_load": "Escalón de Carga Esperado (%)",
-        "voltage_label": "Tensión de Conexión al Data Center (kV)",
-        "dist_loss": "Pérdidas Distribución (%)",
-        "aux_load": "Servicios Auxiliares Campus (%)",
-        
-        "sb_2_title": "2. Tecnología de Generación",
-        "tech_label": "Tecnología Motriz",
-        "tech_opts": ["RICE (Motor Reciprocante)", "Turbina de Gas (Aero)"],
-        "unit_iso": "Potencia Nominal ISO (MW)",
-        "eff_iso": "Eficiencia Térmica ISO (%)",
-        "parasitic": "Consumos Parásitos Gen (%)",
-        "step_cap": "Capacidad de Salto de Carga (%)",
-        "emi_title": "Emisiones Nativas",
-        
-        "sb_3_title": "3. Física de Sitio & Vecinos",
-        "cond_atm": "Condiciones Atmosféricas",
-        "derate_method": "Método de Derateo",
-        "derate_opts": ["Automático", "Manual"],
-        "temp": "Temp. Máx Promedio",
-        "alt": "Altitud",
-        "mn": "Índice de Metano (Gas)",
-        "manual_derate": "Derateo Manual (%)",
-        "urban_int": "Integración Urbana (Vecinos)",
-        "bldg_h": "Altura Edificio Más Alto Cercano",
-        "dist_n": "Distancia al Vecino Más Cercano",
-        "n_type": "Tipo de Vecino",
-        "n_opts": ["Industrial", "Residencial/Sensible"],
-        "source_noise": "Ruido Fuente @ 1m (dBA)",
-        
-        "sb_4_title": "4. Marco Normativo & Urea",
-        "reg_zone": "Zona Regulatoria",
-        "reg_opts": ["USA - EPA Major", "USA - Virginia", "EU Standard", "LatAm / No-Reg"],
-        "urea_days": "Autonomía Almacenamiento Urea (Días)",
-        
-        "sb_5_title": "5. Confiabilidad & BESS",
-        "avail_target": "Disponibilidad Objetivo (%)",
-        "use_bess": "Incluir BESS (Inercia Sintética)",
-        "maint": "Mantenimiento (%)",
-        
-        "sb_6_title": "6. Económicos",
-        "fuel_p": "Precio Gas ($/MMBtu)",
-        
-        # Dashboard KPIs
-        "kpi_cap": "Capacidad IT",
-        "kpi_hr": "Heat Rate Neto",
-        "kpi_eff": "Eff. Real",
-        "kpi_area": "Huella Total",
-        "kpi_compl": "Cumplimiento",
-        "kpi_gen_count": "Generadores Requeridos",
-        
-        "tab_tech": "⚙️ Ingeniería",
-        "tab_area": "🏗️ Huella Física",
-        "tab_env": "🧪 Física & Ambiental",
-        "tab_fin": "💰 Costos",
-        
-        # Area Breakdown
-        "area_breakdown": "Desglos de Áreas (Ref. Workshop Caso 2)",
-        "area_gen": "Bloques de Generación",
-        "area_bess": "Sistema BESS",
-        "area_sub": "Subestación AIS/MT",
-        "area_gas": "Estación de Gas (ERM)",
-        "area_scr": "Granja de Urea/SCR",
-        "area_roads": "Vialidad y Logística (+20%)",
-        
-        # Environment & Tech Labels
-        "acoustic_model": "🔊 Modelo Acústico",
-        "source_noise_lbl": "Ruido Fuente",
-        "level_rec": "Nivel en Receptor",
-        "limit": "Límite",
-        "noise_violation": "🛑 VIOLACIÓN ACÚSTICA",
-        
-        "disp_model": "💨 Dispersión & Emisiones",
-        "min_stack": "Altura Mínima Chimenea",  # <--- AQUÍ ESTÁ LA CORRECCIÓN
-        "warn_scr": "🛑 SE REQUIERE SCR (Urea)",
-        "cons_urea": "Consumo Urea",
-        "store_urea": "Almacenamiento Urea",
-        "tank_urea": "Tanques Requeridos",
-        "log_trucks": "Logística Camiones",
-        
-        "bess_sizing": "Dimensionamiento BESS",
-        "bess_pow": "Potencia BESS",
-        "bess_ene": "Energía BESS (2h)",
-        
-        "status_ok": "✅ OK",
-        "status_fail": "🛑 FALLA",
-        "cost_fuel": "Costo Combustible",
-        "warn_fuel": "Costo alto por ineficiencia de Reserva Rodante.",
-        "aux_impact": "Impacto de Auxiliares:"
-    },
-    "English": {
-        "title": "🏭 Bridge Power Design Engine V9.2",
-        "subtitle": "**Total Engineering Suite.**\nCalculates: Availability (N+M+S), BESS, Urea Logistics, Footprint, and Economics.",
-        "sb_1_title": "1. Data Center Profile",
-        "dc_type_label": "Data Center Type",
-        "dc_opts": ["AI Factory (Training/Inference)", "Standard Hyperscale"],
-        "p_max": "Critical IT Load (MW)",
-        "step_load": "Expected Step Load (%)",
-        "voltage_label": "Connection Voltage to Data Center (kV)",
-        "dist_loss": "Distribution Losses (%)",
-        "aux_load": "Campus Auxiliaries (%)",
-        "sb_2_title": "2. Generation Technology",
-        "tech_label": "Prime Mover Technology",
-        "tech_opts": ["RICE (Reciprocating Engine)", "Gas Turbine (Aero)"],
-        "unit_iso": "ISO Prime Rating (MW)",
-        "eff_iso": "ISO Thermal Efficiency (%)",
-        "parasitic": "Gen. Parasitic Load (%)",
-        "step_cap": "Step Load Capability (%)",
-        "emi_title": "Native Emissions",
-        "sb_3_title": "3. Site Physics & Neighbors",
-        "cond_atm": "Atmospheric Conditions",
-        "derate_method": "Derate Method",
-        "derate_opts": ["Automatic", "Manual"],
-        "temp": "Avg Max Temp",
-        "alt": "Altitude",
-        "mn": "Methane Number (Gas)",
-        "manual_derate": "Manual Derate (%)",
-        "urban_int": "Urban Integration (Neighbors)",
-        "bldg_h": "Tallest Nearby Building",
-        "dist_n": "Distance to Nearest Neighbor",
-        "n_type": "Neighbor Type",
-        "n_opts": ["Industrial", "Residential/Sensitive"],
-        "source_noise": "Source Noise @ 1m (dBA)",
-        "sb_4_title": "4. Regulatory Framework & Urea",
-        "reg_zone": "Regulatory Zone",
-        "reg_opts": ["USA - EPA Major", "USA - Virginia", "EU Standard", "LatAm / Unregulated"],
-        "urea_days": "Urea Storage Autonomy (Days)",
-        "sb_5_title": "5. Reliability & BESS",
-        "avail_target": "Availability Target (%)",
-        "use_bess": "Include BESS (Synthetic Inertia)",
-        "maint": "Maintenance Unavailability (%)",
-        "sb_6_title": "6. Economics",
-        "fuel_p": "Gas Price ($/MMBtu)",
-        
-        "kpi_cap": "IT Capacity",
-        "kpi_hr": "Net Heat Rate",
-        "kpi_eff": "Real Eff",
-        "kpi_area": "Total Footprint",
-        "kpi_compl": "Compliance",
-        "kpi_gen_count": "Generators Required",
-        
-        "tab_tech": "⚙️ Engineering",
-        "tab_area": "🏗️ Physical Footprint",
-        "tab_env": "🧪 Physics & Env",
-        "tab_fin": "💰 Costs",
-        
-        "area_breakdown": "Area Breakdown (Ref. Workshop Case 2)",
-        "area_gen": "Generation Blocks",
-        "area_bess": "BESS System",
-        "area_sub": "AIS/MV Substation",
-        "area_gas": "Gas Station (ERM)",
-        "area_scr": "Urea/SCR Farm",
-        "area_roads": "Roads & Logistics (+20%)",
-        
-        "acoustic_model": "🔊 Acoustic Model",
-        "source_noise_lbl": "Source Noise",
-        "level_rec": "Receiver Level",
-        "limit": "Limit",
-        "noise_violation": "🛑 ACOUSTIC VIOLATION",
-        
-        "disp_model": "💨 Dispersion & Emissions",
-        "min_stack": "Min Stack Height", # <--- CORRECTION HERE
-        "warn_scr": "🛑 SCR REQUIRED (Urea)",
-        "cons_urea": "Urea Consumption",
-        "store_urea": "Urea Storage",
-        "tank_urea": "Tanks Required",
-        "log_trucks": "Truck Logistics",
-        
-        "bess_sizing": "BESS Sizing",
-        "bess_pow": "BESS Power",
-        "bess_ene": "BESS Energy (2h)",
-        
-        "status_ok": "✅ OK",
-        "status_fail": "🛑 FAIL",
-        "cost_fuel": "Fuel Cost",
-        "warn_fuel": "High cost due to Spinning Reserve inefficiency.",
-        "aux_impact": "Auxiliary Impact:"
-    }
+# Single English Dictionary
+t = {
+    "title": "🏭 Bridge Power Design Engine V9.3",
+    "subtitle": "**Total Engineering Suite.**\nCalculates: Availability (N+M+S), BESS, Urea Logistics, Footprint, and Economics.",
+    "sb_1_title": "1. Data Center Profile",
+    "dc_type_label": "Data Center Type",
+    "dc_opts": ["AI Factory (Training/Inference)", "Standard Hyperscale"],
+    "p_max": "Critical IT Load (MW)",
+    "step_load": "Expected Step Load (%)",
+    "voltage_label": "Connection Voltage to Data Center (kV)",
+    "dist_loss": "Distribution Losses (%)",
+    "aux_load": "Campus Auxiliaries (%)",
+    "sb_2_title": "2. Generation Technology",
+    "tech_label": "Prime Mover Technology",
+    "tech_opts": ["RICE (Reciprocating Engine)", "Gas Turbine (Aero)"],
+    "unit_iso": "ISO Prime Rating (MW)",
+    "eff_iso": "ISO Thermal Efficiency (%)",
+    "parasitic": "Gen. Parasitic Load (%)",
+    "step_cap": "Step Load Capability (%)",
+    "emi_title": "Native Emissions",
+    "sb_3_title": "3. Site Physics & Neighbors",
+    "cond_atm": "Atmospheric Conditions",
+    "derate_method": "Derate Method",
+    "derate_opts": ["Automatic", "Manual"],
+    "temp": "Avg Max Temp",
+    "alt": "Altitude",
+    "mn": "Methane Number (Gas)",
+    "manual_derate": "Manual Derate (%)",
+    "urban_int": "Urban Integration (Neighbors)",
+    "bldg_h": "Tallest Nearby Building",
+    "dist_n": "Distance to Nearest Neighbor",
+    "n_type": "Neighbor Type",
+    "n_opts": ["Industrial", "Residential/Sensitive"],
+    "source_noise": "Source Noise @ 1m (dBA)",
+    "sb_4_title": "4. Regulatory Framework & Urea",
+    "reg_zone": "Regulatory Zone",
+    "reg_opts": ["USA - EPA Major", "USA - Virginia", "EU Standard", "LatAm / Unregulated"],
+    "urea_days": "Urea Storage Autonomy (Days)",
+    "sb_5_title": "5. Reliability & BESS",
+    "avail_target": "Availability Target (%)",
+    "use_bess": "Include BESS (Synthetic Inertia)",
+    "maint": "Maintenance Unavailability (%)",
+    "sb_6_title": "6. Economics",
+    "fuel_p": "Gas Price ($/MMBtu)",
+    
+    "kpi_cap": "IT Capacity",
+    "kpi_hr": "Net Heat Rate",
+    "kpi_eff": "Real Eff",
+    "kpi_area": "Total Footprint",
+    "kpi_compl": "Compliance",
+    "kpi_gen_count": "Generators Required",
+    
+    "tab_tech": "⚙️ Engineering",
+    "tab_area": "🏗️ Physical Footprint",
+    "tab_env": "🧪 Physics & Env",
+    "tab_fin": "💰 Costs",
+    
+    "area_breakdown": "Area Breakdown (Ref. Workshop Case 2)",
+    "area_gen": "Generation Blocks",
+    "area_bess": "BESS System",
+    "area_sub": "AIS/MV Substation",
+    "area_gas": "Gas Station (ERM)",
+    "area_scr": "Urea/SCR Farm",
+    "area_roads": "Roads & Logistics (+20%)",
+    
+    "acoustic_model": "🔊 Acoustic Model",
+    "source_noise_lbl": "Source Noise",
+    "level_rec": "Receiver Level",
+    "limit": "Limit",
+    "noise_violation": "🛑 ACOUSTIC VIOLATION",
+    "noise_sol": "Requires Barriers or Hospital-Grade Silencers",
+    
+    "disp_model": "💨 Dispersion & Emissions",
+    "min_stack": "Min Stack Height",
+    "warn_scr": "🛑 SCR REQUIRED (Urea)",
+    "cons_urea": "Urea Consumption",
+    "store_urea": "Urea Storage",
+    "tank_urea": "Tanks Required",
+    "log_trucks": "Truck Logistics",
+    
+    "bess_sizing": "BESS Sizing",
+    "bess_pow": "BESS Power",
+    "bess_ene": "BESS Energy (2h)",
+    
+    "status_ok": "✅ OK",
+    "status_fail": "🛑 FAIL",
+    "cost_fuel": "Fuel Cost",
+    "warn_fuel": "High cost due to Spinning Reserve inefficiency.",
+    "aux_impact": "Auxiliary Impact:"
 }
-
-t = tr[lang_option]
 
 st.title(t["title"])
 st.markdown(t["subtitle"])
@@ -237,11 +135,11 @@ st.markdown(t["subtitle"])
 
 with st.sidebar:
     st.header(t["sb_1_title"])
-    # 1.1 Selección Tipo DC
+    # 1.1 DC Type Selection
     dc_type_sel = st.selectbox(t["dc_type_label"], t["dc_opts"])
     is_ai = "AI" in dc_type_sel or "IA" in dc_type_sel
     
-    # Defaults Inteligentes según Tipo DC
+    # Intelligent Defaults
     def_step_load = 40.0 if is_ai else 10.0
     def_use_bess = True if is_ai else False
     
@@ -294,7 +192,7 @@ with st.sidebar:
     
     derate_factor_calc = 1.0
     
-    # Lógica Imperial/Métrica
+    # Metric/Imperial Logic
     site_alt_m = 0
     site_temp_c = 30
     
@@ -344,11 +242,11 @@ with st.sidebar:
     elif "EU" in reg_zone: limit_nox_tpy = 150.0
     else: limit_nox_tpy = 9999.0
     
-    # Nuevo Input Urea Days
+    # Urea Days Input
     urea_days = st.number_input(t["urea_days"], 1, 30, 7)
 
     st.header(t["sb_5_title"])
-    # Nuevo Input Disponibilidad
+    # Availability Input
     avail_target = st.number_input(t["avail_target"], 90.00, 99.99999, 99.999, format="%.5f")
     use_bess = st.checkbox(t["use_bess"], value=def_use_bess)
     maint_unav = st.number_input(t["maint"], 0.0, 20.0, def_maint) / 100
@@ -357,20 +255,20 @@ with st.sidebar:
     fuel_price = st.number_input(t["fuel_p"], 1.0, 20.0, 4.0)
 
 # ==============================================================================
-# 2. MOTOR DE CÁLCULO
+# 2. CALCULATION ENGINE
 # ==============================================================================
 
-# A. CARGA
+# A. LOAD
 p_aux_mw = p_max * aux_load_pct 
 p_dist_loss = (p_max + p_aux_mw) * dist_loss_pct
 p_net_gen_req = p_max + p_aux_mw + p_dist_loss 
 p_gross_gen_req = p_net_gen_req / (1 - parasitic_pct)
 
-# B. FLOTA & DISPONIBILIDAD
+# B. FLEET & AVAILABILITY
 n_base = math.ceil(p_gross_gen_req / unit_size_site)
 req_step_mw = p_max * (step_load_req / 100.0)
 
-# Cálculo de Redundancia Mínima por Disponibilidad
+# Minimum Redundancy Calculation
 min_redundancy = 1
 if avail_target >= 99.99:
     min_redundancy = 2
@@ -380,13 +278,13 @@ bess_mw = 0
 bess_mwh = 0
 
 if use_bess:
-    # BESS maneja el transitorio
+    # BESS handles transient
     bess_mw = req_step_mw + unit_size_site 
     bess_mwh = bess_mw * 2 
-    # Spin cubre solo N+1/N+2 por disponibilidad
+    # Spin covers only N+1/N+2 for availability
     n_spin = min_redundancy
 else:
-    # Spin maneja transitorio Y disponibilidad
+    # Spin handles transient AND availability
     step_cap_mw_per_unit = unit_size_site * (gen_step_cap / 100.0)
     
     n_spin_step = 0
@@ -408,7 +306,7 @@ n_maint = math.ceil(n_online * maint_unav)
 n_total = n_online + n_maint
 installed_cap_site = n_total * unit_size_site
 
-# C. FÍSICA & AMBIENTAL
+# C. PHYSICS & ENVIRONMENTAL
 attenuation_geo = 20 * math.log10(dist_neighbor_m / 1.0)
 noise_at_receiver_raw = source_noise_dba - attenuation_geo
 num_sources_running = n_online
@@ -423,7 +321,7 @@ hours_yr = 8760
 nox_tpy_raw = (raw_nox * total_bhp_online * hours_yr) / 907185
 req_scr = nox_tpy_raw > limit_nox_tpy
 
-# Lógica Logística Urea
+# Urea Logistics
 urea_l_yr = 0
 urea_storage_l = 0
 num_tanks = 0
@@ -437,7 +335,7 @@ if req_scr:
     num_tanks = math.ceil(urea_storage_l / tank_size_l)
     trucks_yr = math.ceil(urea_l_yr / 25000)
 
-# D. ÁREAS
+# D. AREAS
 area_factor_gen = 140.0 if is_rice else 200.0 
 area_gen = n_total * area_factor_gen
 area_bess = bess_mwh * 25.0
@@ -467,7 +365,7 @@ fuel_cost_hr = (fuel_btu_hr / 1e6) * fuel_price
 cost_kwh = fuel_cost_hr / (p_max * 1000)
 
 # ==============================================================================
-# 3. DASHBOARD (CONVERSIÓN DE SALIDA)
+# 3. DASHBOARD (OUTPUT CONVERSION)
 # ==============================================================================
 
 if is_imperial:
@@ -524,21 +422,21 @@ t_tech, t_area, t_env, t_fin = st.tabs([t["tab_tech"], t["tab_area"], t["tab_env
 with t_tech:
     col1, col2 = st.columns(2)
     with col1:
-        st.subheader("Balance de Potencia")
+        st.subheader("Power Balance")
         df_load = pd.DataFrame({
-            "Concepto": ["IT Crítica", f"Auxiliares ({aux_load_pct*100}%)", "Pérdidas Dist.", "Parásitos Gen.", "TOTAL BRUTO REQ."],
+            "Item": ["Critical IT", f"Auxiliaries ({aux_load_pct*100}%)", "Dist. Losses", "Gen. Parasitics", "TOTAL GROSS REQ."],
             "MW": [p_max, p_aux_mw, p_dist_loss, (p_gross_gen_req - p_net_gen_req), p_gross_gen_req]
         })
         st.dataframe(df_load.style.format({"MW": "{:.2f}"}), use_container_width=True)
     with col2:
-        st.subheader("Flota & Estrategia")
-        st.write(f"**Disponibilidad Objetivo:** {avail_target}%")
-        st.write(f"**Redundancia Mínima:** N+{min_redundancy}")
+        st.subheader("Fleet & Strategy")
+        st.write(f"**Target Availability:** {avail_target}%")
+        st.write(f"**Min Redundancy:** N+{min_redundancy}")
         st.markdown("---")
-        st.write(f"Unidades Base (N): {n_base}")
-        st.write(f"Reserva (S): {n_spin}")
-        st.write(f"Mantenimiento (M): {n_maint}")
-        st.metric("Total Unidades", n_total)
+        st.write(f"Base Units (N): {n_base}")
+        st.write(f"Reserve (S): {n_spin}")
+        st.write(f"Maintenance (M): {n_maint}")
+        st.metric("Total Units", n_total)
         
         if use_bess:
             st.markdown("### " + t["bess_sizing"])
@@ -563,12 +461,13 @@ with t_env:
         st.write(f"**{t['limit']}:** {noise_limit} dBA")
         if req_attenuation > 0:
             st.error(f"{t['noise_violation']} (-{req_attenuation:.1f} dB)")
+            st.info(t["noise_sol"])
         else:
             st.success(t["status_ok"])
     with col2:
         st.subheader(t["disp_model"])
         st.metric(f"NOx ({u_mass}/yr)", f"{disp_mass:,.0f}")
-        st.metric("Límite Zona", f"{disp_limit:,.0f}")
+        st.metric("Zone Limit", f"{disp_limit:,.0f}")
         
         if req_scr: 
             st.warning(t["warn_scr"])
@@ -587,4 +486,4 @@ with t_fin:
 
 # --- FOOTER ---
 st.markdown("---")
-st.caption("Bridge Power Engine V9.2")
+st.caption("Bridge Power Engine V9.3 (English Version)")
