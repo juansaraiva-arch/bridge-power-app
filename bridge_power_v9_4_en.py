@@ -6,7 +6,7 @@ import plotly.express as px
 import plotly.graph_objects as go
 
 # --- PAGE CONFIGURATION ---
-st.set_page_config(page_title="Bridge Power Design Engine V9.4", page_icon="🏭", layout="wide")
+st.set_page_config(page_title="Bridge Power Design Engine V9.4.1", page_icon="🏭", layout="wide")
 
 # ==============================================================================
 # 0. GLOBAL SETTINGS
@@ -38,7 +38,7 @@ else:
 
 # Dictionary
 t = {
-    "title": "🏭 Bridge Power Design Engine V9.4",
+    "title": "🏭 Bridge Power Design Engine V9.4.1",
     "subtitle": "**Total Engineering Suite.**\nCalculates: Availability, BESS, Urea Logistics, Footprint, and **Business Case (Step 8)**.",
     "sb_1_title": "1. Data Center Profile",
     "dc_type_label": "Data Center Type",
@@ -269,13 +269,15 @@ if req_scr:
 else:
     urea_yr_l = 0; urea_store_l = 0; num_tanks = 0; trucks_yr = 0
 
-# D. AREAS
+# D. AREAS (CORRECTED)
 area_gen = n_total * (140.0 if is_rice else 200.0)
 area_bess = bess_mwh * 25.0
 area_sub = 5500.0 if voltage_kv >= 115 else 2500.0
 area_gas = 800.0
 area_scr = (400.0 + (num_tanks * 50)) if req_scr else 0.0
-area_tot_m2 = (area_gen + area_bess + area_sub + area_gas + area_scr) * 1.2
+# -- FIX: Re-introduced area_subtotal calculation --
+area_subtotal = area_gen + area_bess + area_sub + area_gas + area_scr
+area_tot_m2 = area_subtotal * 1.2 # +20% roads
 area_ha = area_tot_m2 / 10000.0
 
 # E. ENGINEERING ECONOMICS (EFFICIENCY)
@@ -359,6 +361,7 @@ with t2:
             area_sub * (10.764 if is_imperial else 1),
             area_gas * (10.764 if is_imperial else 1),
             area_scr * (10.764 if is_imperial else 1),
+            # This line caused the error before, now fixed because area_subtotal exists
             (area_tot_m2 - area_subtotal) * (10.764 if is_imperial else 1)
         ]
     })
@@ -392,7 +395,7 @@ with t4:
         st.markdown(f"""
         **Bridge LCOE:** :red[**${lcoe_bridge:.2f}**] / MWh
         * Fuel: ${fuel_cost_mwh:.2f}
-        * Capacity (Fixed): ${fixed_cost_mwh:.2f}
+        * Capacity (Lease): ${fixed_cost_mwh:.2f}
         * O&M (Var): ${var_om:.2f}
         
         **Utility LCOE:** :green[**${lcoe_utility:.2f}**] / MWh
@@ -444,4 +447,4 @@ with t4:
 
 # --- FOOTER ---
 st.markdown("---")
-st.caption("Bridge Power Engine V9.4 | Includes Step 8 Financial Module")
+st.caption("Bridge Power Engine V9.4.1 | Includes Step 8 Financial Module")
