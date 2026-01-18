@@ -456,4 +456,4 @@ with t4:
 
 # --- FOOTER ---
 st.markdown("---")
-st.caption("Bridge Power Engine V9.6 | Fixed Fuel Calculation & Heat Rate Display")v
+st.caption("Bridge Power Engine V9.6 | Fixed Fuel Calculation & Heat Rate Display")
