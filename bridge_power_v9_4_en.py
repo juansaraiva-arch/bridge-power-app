@@ -6,7 +6,7 @@ import plotly.express as px
 import plotly.graph_objects as go
 
 # --- PAGE CONFIGURATION ---
-st.set_page_config(page_title="Bridge Power Design Engine V9.4.1", page_icon="🏭", layout="wide")
+st.set_page_config(page_title="Bridge Power Design Engine V9.5", page_icon="🏭", layout="wide")
 
 # ==============================================================================
 # 0. GLOBAL SETTINGS
@@ -38,7 +38,7 @@ else:
 
 # Dictionary
 t = {
-    "title": "🏭 Bridge Power Design Engine V9.4.1",
+    "title": "🏭 Bridge Power Design Engine V9.5",
     "subtitle": "**Total Engineering Suite.**\nCalculates: Availability, BESS, Urea Logistics, Footprint, and **Business Case (Step 8)**.",
     "sb_1_title": "1. Data Center Profile",
     "dc_type_label": "Data Center Type",
@@ -78,6 +78,7 @@ t = {
     "cap_charge": "Capacity Charge ($/MW-mo)",
     "var_om": "Variable O&M ($/MWh)",
     "grid_rate": "Utility Grid Rate ($/kWh)",
+    "contract_dur": "Contract Duration (Years)",  # NEW LABEL
     "buyout_res": "Buyout Residual Value (%)",
     "new_capex": "Ref. New CAPEX ($/kW)",
     "vpp_arb": "VPP Arbitrage ($/MWh)",
@@ -194,7 +195,7 @@ with st.sidebar:
     
     st.divider()
 
-    # --- 6. BUSINESS & STRATEGY (NEW STEP 8) ---
+    # --- 6. BUSINESS & STRATEGY (STEP 8) ---
     st.header(t["sb_6_title"])
     st.caption("EaaS / PPA Parameters")
     fuel_price = st.number_input(t["fuel_p"], 1.0, 20.0, 5.0) # $5/MMBtu default
@@ -202,7 +203,10 @@ with st.sidebar:
     var_om = st.number_input(t["var_om"], 0.0, 100.0, 21.50) # $21.50/MWh default
     grid_rate_kwh = st.number_input(t["grid_rate"], 0.01, 0.50, 0.092, format="%.3f") # $0.092/kWh default
     
-    st.caption("Asset Transfer (Year 5)")
+    # NEW: CONTRACT DURATION INPUT
+    contract_years = st.number_input(t["contract_dur"], 1, 20, 5) 
+    
+    st.caption(f"Asset Transfer (Year {contract_years})")
     buyout_pct = st.number_input(t["buyout_res"], 0.0, 100.0, 20.0) # 20%
     new_asset_capex = st.number_input(t["new_capex"], 100.0, 2000.0, 500.0) # $500/kW
     
@@ -275,7 +279,7 @@ area_bess = bess_mwh * 25.0
 area_sub = 5500.0 if voltage_kv >= 115 else 2500.0
 area_gas = 800.0
 area_scr = (400.0 + (num_tanks * 50)) if req_scr else 0.0
-# -- FIX: Re-introduced area_subtotal calculation --
+
 area_subtotal = area_gen + area_bess + area_sub + area_gas + area_scr
 area_tot_m2 = area_subtotal * 1.2 # +20% roads
 area_ha = area_tot_m2 / 10000.0
@@ -298,7 +302,7 @@ lcoe_bridge = fuel_cost_mwh + fixed_cost_mwh + var_om
 # Utility Reference
 lcoe_utility = grid_rate_kwh * 1000
 
-# 2. Buyout Option (Year 5)
+# 2. Buyout Option (Dynamic Year)
 buyout_cost_m = (installed_cap_site * 1000 * new_asset_capex * (buyout_pct/100)) / 1e6
 new_plant_cost_m = (installed_cap_site * 1000 * new_asset_capex) / 1e6
 savings_buyout = new_plant_cost_m - buyout_cost_m
@@ -361,7 +365,6 @@ with t2:
             area_sub * (10.764 if is_imperial else 1),
             area_gas * (10.764 if is_imperial else 1),
             area_scr * (10.764 if is_imperial else 1),
-            # This line caused the error before, now fixed because area_subtotal exists
             (area_tot_m2 - area_subtotal) * (10.764 if is_imperial else 1)
         ]
     })
@@ -406,7 +409,6 @@ with t4:
         else: st.success(f"Savings: -${abs(delta):.2f}/MWh (Competitive!)")
 
     with col_l2:
-        # Plotly Chart for LCOE
         lcoe_data = pd.DataFrame({
             "Cost Component": ["Fuel", "Capacity (Lease)", "Variable O&M", "Utility Tariff"],
             "$/MWh": [fuel_cost_mwh, fixed_cost_mwh, var_om, lcoe_utility],
@@ -418,7 +420,7 @@ with t4:
     st.divider()
 
     # 2. Buyout & Transition
-    st.subheader("2. Asset Transfer Strategy (Year 5)")
+    st.subheader(f"2. Asset Transfer Strategy (Year {contract_years})")
     c_b1, c_b2 = st.columns(2)
     with c_b1:
         st.metric("Total Installed Fleet", f"{installed_cap_site:.1f} MW")
@@ -447,4 +449,4 @@ with t4:
 
 # --- FOOTER ---
 st.markdown("---")
-st.caption("Bridge Power Engine V9.4.1 | Includes Step 8 Financial Module")
+st.caption("Bridge Power Engine V9.5 | Includes Financial Module & Dynamic Duration")
