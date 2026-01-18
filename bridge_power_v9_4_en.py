@@ -6,7 +6,7 @@ import plotly.express as px
 import plotly.graph_objects as go
 
 # --- PAGE CONFIGURATION ---
-st.set_page_config(page_title="Bridge Power Design Engine V9.5", page_icon="🏭", layout="wide")
+st.set_page_config(page_title="Bridge Power Design Engine V9.6", page_icon="🏭", layout="wide")
 
 # ==============================================================================
 # 0. GLOBAL SETTINGS
@@ -38,7 +38,7 @@ else:
 
 # Dictionary
 t = {
-    "title": "🏭 Bridge Power Design Engine V9.5",
+    "title": "🏭 Bridge Power Design Engine V9.6",
     "subtitle": "**Total Engineering Suite.**\nCalculates: Availability, BESS, Urea Logistics, Footprint, and **Business Case (Step 8)**.",
     "sb_1_title": "1. Data Center Profile",
     "dc_type_label": "Data Center Type",
@@ -78,7 +78,7 @@ t = {
     "cap_charge": "Capacity Charge ($/MW-mo)",
     "var_om": "Variable O&M ($/MWh)",
     "grid_rate": "Utility Grid Rate ($/kWh)",
-    "contract_dur": "Contract Duration (Years)",  # NEW LABEL
+    "contract_dur": "Contract Duration (Years)",
     "buyout_res": "Buyout Residual Value (%)",
     "new_capex": "Ref. New CAPEX ($/kW)",
     "vpp_arb": "VPP Arbitrage ($/MWh)",
@@ -203,7 +203,7 @@ with st.sidebar:
     var_om = st.number_input(t["var_om"], 0.0, 100.0, 21.50) # $21.50/MWh default
     grid_rate_kwh = st.number_input(t["grid_rate"], 0.01, 0.50, 0.092, format="%.3f") # $0.092/kWh default
     
-    # NEW: CONTRACT DURATION INPUT
+    # CONTRACT DURATION INPUT
     contract_years = st.number_input(t["contract_dur"], 1, 20, 5) 
     
     st.caption(f"Asset Transfer (Year {contract_years})")
@@ -293,7 +293,10 @@ heat_rate_btu = (3412.14 / (real_eff/100))
 # F. BUSINESS CASE (STEP 8 LOGIC)
 # 1. LCOE Bridge Power
 gen_mwh_yr = p_gross_gen_req * 8760
-fuel_cost_mwh = (heat_rate_btu / 1e6) * fuel_price
+
+# --- FIX UNIT ERROR: (Btu/kWh / 1e6) * $/MMBtu = $/kWh. Need $/MWh -> Multiply by 1000 ---
+fuel_cost_mwh = ((heat_rate_btu / 1e6) * fuel_price) * 1000 
+
 # Fixed Cost spread over generation (Capacity Charge)
 fixed_cost_yr = installed_cap_site * cap_charge * 12
 fixed_cost_mwh = fixed_cost_yr / gen_mwh_yr
@@ -327,11 +330,13 @@ else:
     d_urea = urea_yr_l; u_vol = "L"; d_mass = nox_tpy; u_mass = "Tonnes"
     d_stack = min_stack; u_dst = "m"
 
-c1, c2, c3, c4 = st.columns(4)
+# --- TOP KPIs (RESTORED HEAT RATE) ---
+c1, c2, c3, c4, c5 = st.columns(5)
 c1.metric("IT Capacity", f"{p_max} MW", f"Gross: {p_gross_gen_req:.1f} MW")
 c2.metric("Generators", f"{n_total} Units", f"N+S+M: {n_base}+{n_spin}+{n_maint}")
-c3.metric("LCOE (Bridge)", f"${lcoe_bridge:.2f}/MWh", f"Grid: ${lcoe_utility:.2f}")
-c4.metric("Compliance", "FAIL" if (req_scr or req_attenuation > 0) else "OK", f"NOx: {d_mass:.0f} {u_mass}")
+c3.metric("Heat Rate", f"{heat_rate_btu:,.0f} Btu/kWh", f"Eff: {real_eff:.1f}%")
+c4.metric("LCOE (Bridge)", f"${lcoe_bridge:.2f}/MWh", f"Grid: ${lcoe_utility:.2f}")
+c5.metric("Compliance", "FAIL" if (req_scr or req_attenuation > 0) else "OK", f"NOx: {d_mass:.0f} {u_mass}")
 
 st.divider()
 
@@ -392,9 +397,11 @@ with t4:
     
     # 1. LCOE Comparison
     st.subheader("1. Bridge Power LCOE vs Utility")
+    
     col_l1, col_l2 = st.columns([1, 2])
     
     with col_l1:
+        st.metric("Net Heat Rate", f"{heat_rate_btu:,.0f} Btu/kWh")
         st.markdown(f"""
         **Bridge LCOE:** :red[**${lcoe_bridge:.2f}**] / MWh
         * Fuel: ${fuel_cost_mwh:.2f}
@@ -449,4 +456,4 @@ with t4:
 
 # --- FOOTER ---
 st.markdown("---")
-st.caption("Bridge Power Engine V9.5 | Includes Financial Module & Dynamic Duration")
+st.caption("Bridge Power Engine V9.6 | Fixed Fuel Calculation & Heat Rate Display")v
