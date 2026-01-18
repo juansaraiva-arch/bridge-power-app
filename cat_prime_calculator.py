@@ -76,7 +76,7 @@ with st.sidebar:
     
     p_it = st.number_input("Critical IT Load (MW)", 10.0, 500.0, 100.0, step=10.0)
     
-    # NUEVO: Disponibilidad Requerida
+    # Disponibilidad Requerida
     avail_req = st.number_input("Required Availability (%)", 90.0, 99.99999, 99.999, format="%.5f")
     
     step_load_req = st.number_input("Expected Step Load (%)", 0.0, 100.0, def_step_load)
@@ -162,7 +162,7 @@ with st.sidebar:
 
     # --- 5. COOLING & TRI-GEN ---
     st.header(t["sb_5"])
-    include_chp = st.checkbox("Include Tri-Generation (CHP)", value=True)
+    include_chp = st.checkbox("Include Tri-Gen (CHP)", value=True)
     
     cooling_method = "Tri-Gen"
     if include_chp:
@@ -192,6 +192,10 @@ with st.sidebar:
     # --- 7. ECONOMICS ---
     st.header(t["sb_7"])
     gas_price = st.number_input("Delivered Gas Price ($/MMBtu)", 1.0, 20.0, 6.5)
+    
+    # NEW: O&M Variable Input
+    om_var_price = st.number_input("Variable O&M ($/MWh)", 1.0, 50.0, 12.0)
+    
     grid_price = st.number_input("Comparison Grid Price ($/kWh)", 0.05, 0.50, 0.15)
     project_years = st.number_input("Project Lifespan (Years)", 10, 30, 20)
     wacc = st.number_input("WACC (%)", 0.0, 15.0, 8.0) / 100.0
@@ -229,9 +233,6 @@ unit_site_cap = unit_size_iso * derate_factor_calc
 if use_bess:
     target_load_factor = 0.95 
     n_running = math.ceil(p_gross_req / (unit_site_cap * target_load_factor))
-    
-    # Redundancy based on Availability
-    # If >= 99.9999% (Six Nines), bump reserve to 2. Otherwise 1.
     n_reserve = 2 if avail_req >= 99.9999 else 1
     
     step_mw_req = p_it * (step_load_req / 100.0)
@@ -250,7 +251,6 @@ else:
         n_calc += 1
     
     n_running = n_calc
-    # Even without BESS, high avail might demand more reserve
     n_reserve = 2 if avail_req >= 99.9999 else 1
     bess_power = 0
     bess_energy = 0
@@ -476,7 +476,7 @@ with t4:
     st.subheader("Financial Feasibility (Editable)")
     
     # Editable CAPEX
-    st.markdown("👇 **Edit CAPEX values below to update LCOE:**")
+    st.markdown("👇 **Edit CAPEX ($M) to update LCOE:**")
     edited_df = st.data_editor(df_capex, num_rows="dynamic", use_container_width=True)
     
     # Recalculate based on edits
@@ -484,14 +484,20 @@ with t4:
     
     # LCOE Calculation
     mwh_year = p_net_req * 8760
+    # Fixed Fuel Unit Error: MMBtu/yr * $/MMBtu
     fuel_cost_year = (heat_input_mw * 3.41214 * 8760) * gas_price
-    om_cost_year = mwh_year * 12.0
+    om_cost_year = mwh_year * om_var_price # NOW USING VARIABLE INPUT
     
     crf = (wacc * (1 + wacc)**project_years) / ((1 + wacc)**project_years - 1)
     capex_annualized = (total_capex * 1e6) * crf
     
     total_annual_cost = fuel_cost_year + om_cost_year + capex_annualized
     lcoe = total_annual_cost / (mwh_year * 1000)
+    
+    # Breakdown for Chart
+    lcoe_fuel = fuel_cost_year / (mwh_year * 1000)
+    lcoe_om = om_cost_year / (mwh_year * 1000)
+    lcoe_capex = capex_annualized / (mwh_year * 1000)
     
     # Comparison
     savings = (grid_price - lcoe) * mwh_year * 1000
@@ -501,8 +507,20 @@ with t4:
     c_f2.metric("LCOE (Prime)", f"${lcoe:.4f} / kWh")
     c_f3.metric("Annual Savings vs Grid", f"${savings/1e6:.1f} M", f"Grid: ${grid_price:.3f}")
 
+    # NEW: Stacked Bar Chart for LCOE Composition
+    st.markdown("### 📊 LCOE Cost Structure")
+    
+    cost_data = pd.DataFrame({
+        "Component": ["Fuel", "O&M (OPEX)", "CAPEX (Amortized)"],
+        "$/kWh": [lcoe_fuel, lcoe_om, lcoe_capex]
+    })
+    
+    fig_bar = px.bar(cost_data, x="Component", y="$/kWh", color="Component", 
+                     title="Cost Breakdown ($/kWh)", text_auto='.4f')
+    st.plotly_chart(fig_bar, use_container_width=True)
+
     # Sensitivity Analysis
-    st.markdown("### 📊 Sensitivity: Gas Price Impact")
+    st.markdown("### 📈 Sensitivity: Gas Price Impact")
     gas_range = np.linspace(2, 12, 20)
     lcoe_range = []
     for g in gas_range:
@@ -511,10 +529,10 @@ with t4:
         lcoe_range.append(tc / (mwh_year * 1000))
         
     df_sens = pd.DataFrame({"Gas Price ($/MMBtu)": gas_range, "LCOE ($/kWh)": lcoe_range})
-    fig = px.line(df_sens, x="Gas Price ($/MMBtu)", y="LCOE ($/kWh)", markers=True, title="LCOE Sensitivity to Fuel Price")
-    fig.add_hline(y=grid_price, line_dash="dash", annotation_text="Grid Price", line_color="red")
-    st.plotly_chart(fig, use_container_width=True)
+    fig_sens = px.line(df_sens, x="Gas Price ($/MMBtu)", y="LCOE ($/kWh)", markers=True, title="LCOE Sensitivity to Fuel Price")
+    fig_sens.add_hline(y=grid_price, line_dash="dash", annotation_text="Grid Price", line_color="red")
+    st.plotly_chart(fig_sens, use_container_width=True)
 
 # --- FOOTER ---
 st.markdown("---")
-st.caption("CAT Prime Power Calculator | v2026.4")
+st.caption("CAT Prime Power Calculator | v2026.5 | Includes O&M Control")
