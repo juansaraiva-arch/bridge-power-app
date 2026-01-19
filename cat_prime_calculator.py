@@ -5,7 +5,7 @@ import math
 import plotly.express as px
 
 # --- PAGE CONFIGURATION ---
-st.set_page_config(page_title="CAT Prime Solution Designer v13", page_icon="⚡", layout="wide")
+st.set_page_config(page_title="CAT Prime Solution Designer v14", page_icon="⚡", layout="wide")
 
 # ==============================================================================
 # 0. DATA LIBRARY (INTEGRATED FROM EXCEL "Libreria.xlsx")
@@ -24,9 +24,10 @@ leps_gas_library = {
         "default_for": 3.0, 
         "default_maint": 6.0,
         "est_cost_kw": 775.0,      
-        "est_install_kw": 300.0,   # Low install cost (Mobile)
+        "est_install_kw": 300.0,
         "gas_pressure_min_psi": 0.5,
-        "gas_pressure_max_psi": 5.0
+        "gas_pressure_max_psi": 5.0,
+        "reactance_xd_2": 0.14 # Typical Mobile Gen
     },
     "G3520FR": {
         "description": "Fast Response Gen Set (High Speed)",
@@ -42,7 +43,8 @@ leps_gas_library = {
         "est_cost_kw": 575.0,
         "est_install_kw": 650.0,
         "gas_pressure_min_psi": 0.5,
-        "gas_pressure_max_psi": 5.0
+        "gas_pressure_max_psi": 5.0,
+        "reactance_xd_2": 0.14 # Typical High Speed
     },
     "G3520K": {
         "description": "High Efficiency Gen Set (High Speed)",
@@ -58,7 +60,8 @@ leps_gas_library = {
         "est_cost_kw": 575.0,
         "est_install_kw": 650.0,
         "gas_pressure_min_psi": 0.5,
-        "gas_pressure_max_psi": 5.0
+        "gas_pressure_max_psi": 5.0,
+        "reactance_xd_2": 0.13 # Slightly lower for HE
     },
     "CG260-16": {
         "description": "Cogeneration Specialist (High Speed)",
@@ -74,7 +77,8 @@ leps_gas_library = {
         "est_cost_kw": 675.0,
         "est_install_kw": 1100.0,
         "gas_pressure_min_psi": 7.25,
-        "gas_pressure_max_psi": 145.0
+        "gas_pressure_max_psi": 145.0,
+        "reactance_xd_2": 0.15
     },
     "Titan 130": {
         "description": "Solar Gas Turbine (16.5 MW)",
@@ -90,7 +94,8 @@ leps_gas_library = {
         "est_cost_kw": 775.0,
         "est_install_kw": 1000.0,
         "gas_pressure_min_psi": 300.0,
-        "gas_pressure_max_psi": 400.0
+        "gas_pressure_max_psi": 400.0,
+        "reactance_xd_2": 0.18 # Turbines typically higher
     },
     "Titan 250": {
         "description": "Solar Gas Turbine (23.2 MW)",
@@ -106,7 +111,8 @@ leps_gas_library = {
         "est_cost_kw": 775.0,
         "est_install_kw": 1000.0,
         "gas_pressure_min_psi": 400.0,
-        "gas_pressure_max_psi": 500.0
+        "gas_pressure_max_psi": 500.0,
+        "reactance_xd_2": 0.18
     },
     "Titan 350": {
         "description": "Solar Gas Turbine (38.0 MW)",
@@ -122,7 +128,8 @@ leps_gas_library = {
         "est_cost_kw": 775.0,
         "est_install_kw": 1000.0,
         "gas_pressure_min_psi": 400.0,
-        "gas_pressure_max_psi": 500.0
+        "gas_pressure_max_psi": 500.0,
+        "reactance_xd_2": 0.18
     },
     "G20CM34": {
         "description": "Medium Speed Baseload Platform",
@@ -136,9 +143,10 @@ leps_gas_library = {
         "default_for": 3.0, 
         "default_maint": 5.0,
         "est_cost_kw": 700.0,
-        "est_install_kw": 1250.0, # High civil work
+        "est_install_kw": 1250.0,
         "gas_pressure_min_psi": 90.0,
-        "gas_pressure_max_psi": 110.0
+        "gas_pressure_max_psi": 110.0,
+        "reactance_xd_2": 0.16 # Medium Speed
     }
 }
 
@@ -172,7 +180,7 @@ t = {
     "subtitle": "**Sovereign Energy Solutions.**\nAdvanced modeling for Off-Grid Microgrids, Tri-Generation, and Gas Infrastructure.",
     "sb_1": "1. Data Center Profile",
     "sb_2": "2. Generation Technology",
-    "sb_3": "3. Site & Neighbors",
+    "sb_3": "3. Site & Electrical",
     "sb_4": "4. Strategy (BESS & LNG)",
     "sb_5": "5. Cooling & Tri-Gen",
     "sb_6": "6. Regulatory & Emissions",
@@ -228,15 +236,16 @@ with st.sidebar:
         hr_user = st.number_input("Heat Rate LHV (Btu/kWh)", 5000.0, 15000.0, def_hr_lhv, format="%.0f")
         final_elec_eff = 3412.14 / hr_user
 
-    # COST SECTION (Consolidated)
+    # COST SECTION
     st.markdown("💰 **Asset Valuation**")
     gen_unit_cost = st.number_input("Equipment Cost ($/kW)", 100.0, 3000.0, eng_data['est_cost_kw'], step=10.0)
-    
-    # Consolidated Installation Cost
     gen_install_cost = st.number_input("Installation Cost ($/kW)", 50.0, 3000.0, eng_data['est_install_kw'], step=10.0, help="Includes Civil, Engineering & Electrical BOP")
     
     step_load_cap = st.number_input("Unit Step Load Capability (%)", 0.0, 100.0, eng_data['step_load_pct'])
     
+    # NEW: Reactance Input for Short Circuit
+    xd_2_pu = st.number_input('Subtransient Reactance (Xd" pu)', 0.05, 0.30, eng_data.get('reactance_xd_2', 0.15), step=0.01)
+
     st.caption("Availability Parameters (N+M+S)")
     c_r1, c_r2 = st.columns(2)
     maint_outage_pct = c_r1.number_input("Maint. Unavail (%)", 0.0, 20.0, float(eng_data.get('default_maint', 5.0))) / 100.0
@@ -244,15 +253,24 @@ with st.sidebar:
     
     gen_parasitic_pct = st.number_input("Gen. Auxiliaries (%)", 0.0, 10.0, 2.5) / 100.0
 
-    # --- RE-ADDED MISSING EMISSIONS INPUTS ---
     c_e1, c_e2 = st.columns(2)
     raw_nox = c_e1.number_input("Native NOx (g/bhp-hr)", 0.0, 10.0, eng_data['emissions_nox'])
     raw_co = c_e2.number_input("Native CO (g/bhp-hr)", 0.0, 10.0, eng_data['emissions_co'])
 
     st.divider()
 
-    # --- 3. SITE & GAS INFRASTRUCTURE ---
+    # --- 3. SITE & ELECTRICAL ---
     st.header(t["sb_3"])
+    
+    # Electrical Grid Connection Inputs
+    st.markdown("🔌 **Grid Connection**")
+    grid_connected = st.checkbox("Grid Connected (Parallel)", value=True)
+    if grid_connected:
+        grid_mva_sc = st.number_input("Grid Short Circuit Capacity (MVA)", 50.0, 5000.0, 500.0, step=50.0)
+    else:
+        grid_mva_sc = 0.0
+
+    st.divider()
     
     derate_mode = st.radio("Derate Method", ["Auto-Calculate", "Manual Entry"])
     derate_factor_calc = 1.0
@@ -281,13 +299,12 @@ with st.sidebar:
     st.markdown("⛽ **Gas Infrastructure**")
     dist_gas_main_m = st.number_input("Distance to Gas Main (m)", 10.0, 20000.0, 1000.0, step=50.0)
     
-    # Pressure Input (Dynamic Units)
     if is_imperial:
-        supply_pressure_disp = st.number_input(f"Supply Pressure ({u_press})", 5.0, 1000.0, 60.0, step=5.0) # USA Default 60 psig
+        supply_pressure_disp = st.number_input(f"Supply Pressure ({u_press})", 5.0, 1000.0, 60.0, step=5.0) 
         supply_pressure_psi = supply_pressure_disp
         supply_pressure_bar = supply_pressure_psi * 0.0689476
     else:
-        supply_pressure_disp = st.number_input(f"Supply Pressure ({u_press})", 0.5, 100.0, 4.1, step=0.5) # Metric Default ~4.1 Bar
+        supply_pressure_disp = st.number_input(f"Supply Pressure ({u_press})", 0.5, 100.0, 4.1, step=0.5) 
         supply_pressure_bar = supply_pressure_disp
         supply_pressure_psi = supply_pressure_bar * 14.5038
 
@@ -331,10 +348,9 @@ with st.sidebar:
     limit_nox_tpy = 250.0 if "EPA" in reg_zone else (150.0 if "EU" in reg_zone else 9999.0)
     urea_days = st.number_input("Urea Storage (Days)", 1, 30, 7)
     
-    # After-Treatment Cost Inputs
     st.markdown("🛠️ **After-Treatment Costs**")
-    cost_scr_kw = st.number_input("SCR System Cost ($/kW)", 0.0, 200.0, 60.0, help="Selective Catalytic Reduction (NOx)")
-    cost_oxicat_kw = st.number_input("Oxidation Cat Cost ($/kW)", 0.0, 100.0, 15.0, help="CO Reduction Catalyst")
+    cost_scr_kw = st.number_input("SCR System Cost ($/kW)", 0.0, 200.0, 60.0)
+    cost_oxicat_kw = st.number_input("Oxidation Cat Cost ($/kW)", 0.0, 100.0, 15.0)
     force_oxicat = st.checkbox("Force Oxicat Inclusion", value=False)
 
     st.divider()
@@ -368,10 +384,13 @@ p_gross_req = p_net_req / (1 - total_plant_loss_pct)
 p_parasitic_mw = p_gross_req * gen_parasitic_pct
 p_loss_mw = p_gross_req * dist_loss_pct
 
+# Voltage Logic
 if is_50hz:
-    rec_voltage = "11 kV" if p_gross_req < 20 else ("33 kV" if p_gross_req > 50 else "11 kV / 33 kV")
+    rec_voltage_str = "11 kV" if p_gross_req < 20 else ("33 kV" if p_gross_req > 50 else "11 kV / 33 kV")
+    op_voltage_kv = 11.0 if p_gross_req < 35 else 33.0
 else:
-    rec_voltage = "13.8 kV" if p_gross_req < 25 else ("34.5 kV" if p_gross_req > 60 else "13.8 kV / 34.5 kV")
+    rec_voltage_str = "13.8 kV" if p_gross_req < 25 else ("34.5 kV" if p_gross_req > 60 else "13.8 kV / 34.5 kV")
+    op_voltage_kv = 13.8 if p_gross_req < 45 else 34.5
 
 # --- B. FLEET & RELIABILITY ---
 unit_site_cap = unit_size_iso * derate_factor_calc
@@ -413,7 +432,32 @@ net_eff = real_elec_eff * (1 - total_plant_loss_pct)
 hr_net_lhv_btu = 3412.14 / net_eff
 hr_net_hhv_btu = hr_net_lhv_btu * 1.108
 
-# --- C. THERMAL ---
+# --- C. SHORT CIRCUIT CALCULATION ---
+# 1. Generator Contribution (MVA sc)
+# S_gen_unit = MW / 0.8 (assuming 0.8 PF)
+# Isc = S / (sqrt3 * V * Xd")
+gen_mva_total = installed_cap / 0.8
+# Generator SC MVA = MVA_Total / Xd"
+gen_sc_mva = gen_mva_total / xd_2_pu
+
+# 2. Total SC MVA
+total_sc_mva = gen_sc_mva + grid_mva_sc
+
+# 3. Current (kA)
+isc_ka = total_sc_mva / (math.sqrt(3) * op_voltage_kv)
+
+# 4. Breaker Selection
+standard_breakers = [25, 31.5, 40, 50, 63]
+rec_breaker = 63
+for b in standard_breakers:
+    if b > (isc_ka * 1.1): # 10% safety margin
+        rec_breaker = b
+        break
+
+# Cost Factor for Switchgear (If > 40kA, expensive)
+switchgear_cost_factor = 1.2 if isc_ka > 40 else 1.0
+
+# --- D. THERMAL ---
 heat_input_mw = p_gross_req / real_elec_eff
 heat_exhaust_mw = heat_input_mw * 0.28
 heat_jacket_mw = heat_input_mw * 0.18
@@ -430,18 +474,15 @@ else:
 
 water_cons_daily_m3 = water_cons_m3_hr * 24
 
-# --- D. LNG & GAS PIPELINE ALGORITHM ---
-# 1. Consumption
+# --- E. LNG & GAS PIPELINE ---
 total_gas_energy_day_mmbtu = (p_gross_req * 24 * 3412.14) / (real_elec_eff * 1e6)
 gas_vol_day_m3 = total_gas_energy_day_mmbtu * 28.26
 required_storage_m3 = (gas_vol_day_m3 / 600) * autonomy_days if include_lng else 0
 num_tanks = math.ceil(required_storage_m3 / 3000) if include_lng else 0
 
-# 2. Pipeline Calculation
 peak_mmbtu_hr = (p_gross_req * 3412.14) / (real_elec_eff * 1e6)
 peak_scfh = peak_mmbtu_hr * 1000 
 req_pressure_min = eng_data.get('gas_pressure_min_psi', 0.5)
-req_pressure_max = eng_data.get('gas_pressure_max_psi', 5.0)
 
 need_compressor = False
 if supply_pressure_psi < req_pressure_min:
@@ -450,12 +491,12 @@ if supply_pressure_psi < req_pressure_min:
 else:
     pressure_status = "Pressure OK"
 
-actual_flow_acfm = peak_scfh * (14.7 / (supply_pressure_psi + 14.7)) / 60 # ACFM
-target_area_ft2 = actual_flow_acfm / (65 * 60) # Target 65 fps (20 m/s)
+actual_flow_acfm = peak_scfh * (14.7 / (supply_pressure_psi + 14.7)) / 60 
+target_area_ft2 = actual_flow_acfm / (65 * 60) 
 target_dia_in = math.sqrt(target_area_ft2 * 4 / math.pi) * 12
-rec_pipe_dia = max(4, math.ceil(target_dia_in)) # Min 4 inch
+rec_pipe_dia = max(4, math.ceil(target_dia_in)) 
 
-# --- E. EMISSIONS & AFTER-TREATMENT ---
+# --- F. EMISSIONS ---
 attenuation = 20 * math.log10(dist_neighbor_m)
 noise_rec = source_noise_dba + (10 * math.log10(n_running)) - attenuation
 total_bhp = p_gross_req * 1341
@@ -469,7 +510,7 @@ if req_scr:
 if force_oxicat: 
     at_capex_total += (installed_cap * 1000) * cost_oxicat_kw
 
-# --- F. FOOTPRINT ---
+# --- G. FOOTPRINT ---
 area_gen = n_total * 200 
 area_lng = num_tanks * 600 
 area_chp = total_cooling_mw * 20 if include_chp else (p_net_req * 10) 
@@ -477,11 +518,12 @@ area_bess = bess_power * 30
 area_sub = 2500
 total_area_m2 = (area_gen + area_lng + area_chp + area_bess + area_sub) * 1.2
 
-# --- G. FINANCIALS (CONSOLIDATED) ---
+# --- H. FINANCIALS (SC FACTOR ADDED) ---
 base_gen_cost_kw = gen_unit_cost 
 gen_cost_total = (installed_cap * 1000) * base_gen_cost_kw / 1e6 
 
-idx_install = gen_install_cost / gen_unit_cost
+# Apply switchgear penalty to Installation Index
+idx_install = (gen_install_cost / gen_unit_cost) * switchgear_cost_factor
 
 idx_chp = 0.20 if include_chp else 0
 idx_bess = 0.30 if use_bess else 0
@@ -526,7 +568,7 @@ else:
 c1, c2, c3, c4 = st.columns(4)
 c1.metric(t["kpi_net"], f"{p_net_req:.1f} MW", f"Gross: {p_gross_req:.1f} MW")
 c2.metric("Net Heat Rate (LHV)", f"{hr_net_lhv_btu:,.0f} Btu/kWh", f"HHV: {hr_net_hhv_btu:,.0f}")
-c3.metric("Rec. Voltage", rec_voltage, f"Freq: {freq_hz} Hz")
+c3.metric("Rec. Voltage", rec_voltage_str, f"Isc: {isc_ka:.1f} kA")
 c4.metric(t["kpi_pue"], f"{pue_calc:.3f}", f"Cooling: {cooling_mode}")
 
 st.divider()
@@ -548,11 +590,12 @@ with t1:
         df_bal = pd.DataFrame({"Component": comps, "Power (MW)": vals})
         st.dataframe(df_bal.style.format({"Power (MW)": "{:.2f}"}), use_container_width=True)
         
-        if use_bess:
-            st.success("✅ **BESS Enabled:** Fleet runs at High Efficiency (Base Load).")
-            st.metric("BESS Sizing", f"{bess_power:.1f} MW / {bess_energy:.1f} MWh")
-        else:
-            st.warning("⚠️ **No BESS:** Fleet runs De-Rated (Spinning Reserve) to cover Step Loads.")
+        st.subheader("Electrical Sizing")
+        st.write(f"**Operating Voltage:** {op_voltage_kv} kV")
+        st.write(f"**Grid Contribution:** {grid_mva_sc} MVA")
+        st.write(f"**Gen Contribution:** {gen_sc_mva:.1f} MVA (Xd\" {xd_2_pu})")
+        st.markdown(f"**Total Short Circuit:** :red[**{isc_ka:.1f} kA**]")
+        st.success(f"✅ Recommended Switchgear Rating: **{rec_breaker} kA**")
             
     with col2:
         st.subheader("Fleet Strategy (N+M+S)")
@@ -635,6 +678,8 @@ with t4:
     
     # 1. Cost Index Editor
     st.info(f"**Inst. Ratio Auto-Calc:** Installation Cost (${gen_install_cost:.0f}/kW) vs Equipment Cost (${gen_unit_cost:.0f}/kW)")
+    if switchgear_cost_factor > 1.0:
+        st.warning(f"⚠️ **High Short Circuit ({isc_ka:.1f} kA):** Installation Cost Index increased by 20%.")
     
     st.markdown(f"👇 **Edit Indices to Adjust CAPEX:** (Base: **${gen_unit_cost:.0f}/kW**)")
     edited_capex = st.data_editor(
@@ -700,4 +745,4 @@ with t4:
 
 # --- FOOTER ---
 st.markdown("---")
-st.caption("CAT Prime Solution Designer | v2026.13.1 | Fixed Variables")
+st.caption("CAT Prime Solution Designer | v2026.14 | Electrical Sizing Module")
