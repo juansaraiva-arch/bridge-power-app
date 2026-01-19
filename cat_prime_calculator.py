@@ -232,7 +232,7 @@ with st.sidebar:
     st.markdown("💰 **Asset Valuation**")
     gen_unit_cost = st.number_input("Equipment Cost ($/kW)", 100.0, 3000.0, eng_data['est_cost_kw'], step=10.0)
     
-    # NEW: Consolidated Installation Cost
+    # Consolidated Installation Cost
     gen_install_cost = st.number_input("Installation Cost ($/kW)", 50.0, 3000.0, eng_data['est_install_kw'], step=10.0, help="Includes Civil, Engineering & Electrical BOP")
     
     step_load_cap = st.number_input("Unit Step Load Capability (%)", 0.0, 100.0, eng_data['step_load_pct'])
@@ -243,6 +243,11 @@ with st.sidebar:
     forced_outage_pct = c_r2.number_input("Forced Outage Rate (%)", 0.0, 20.0, float(eng_data.get('default_for', 2.0))) / 100.0
     
     gen_parasitic_pct = st.number_input("Gen. Auxiliaries (%)", 0.0, 10.0, 2.5) / 100.0
+
+    # --- RE-ADDED MISSING EMISSIONS INPUTS ---
+    c_e1, c_e2 = st.columns(2)
+    raw_nox = c_e1.number_input("Native NOx (g/bhp-hr)", 0.0, 10.0, eng_data['emissions_nox'])
+    raw_co = c_e2.number_input("Native CO (g/bhp-hr)", 0.0, 10.0, eng_data['emissions_co'])
 
     st.divider()
 
@@ -272,7 +277,7 @@ with st.sidebar:
         manual_derate_pct = st.number_input("Manual Derate (%)", 0.0, 50.0, 5.0)
         derate_factor_calc = 1.0 - (manual_derate_pct / 100.0)
 
-    # NEW: GAS PIPELINE INPUTS
+    # GAS PIPELINE INPUTS
     st.markdown("⛽ **Gas Infrastructure**")
     dist_gas_main_m = st.number_input("Distance to Gas Main (m)", 10.0, 20000.0, 1000.0, step=50.0)
     
@@ -326,7 +331,7 @@ with st.sidebar:
     limit_nox_tpy = 250.0 if "EPA" in reg_zone else (150.0 if "EU" in reg_zone else 9999.0)
     urea_days = st.number_input("Urea Storage (Days)", 1, 30, 7)
     
-    # NEW: After-Treatment Cost Inputs
+    # After-Treatment Cost Inputs
     st.markdown("🛠️ **After-Treatment Costs**")
     cost_scr_kw = st.number_input("SCR System Cost ($/kW)", 0.0, 200.0, 60.0, help="Selective Catalytic Reduction (NOx)")
     cost_oxicat_kw = st.number_input("Oxidation Cat Cost ($/kW)", 0.0, 100.0, 15.0, help="CO Reduction Catalyst")
@@ -433,13 +438,11 @@ required_storage_m3 = (gas_vol_day_m3 / 600) * autonomy_days if include_lng else
 num_tanks = math.ceil(required_storage_m3 / 3000) if include_lng else 0
 
 # 2. Pipeline Calculation
-# Peak Flow Calculation (SCFH)
 peak_mmbtu_hr = (p_gross_req * 3412.14) / (real_elec_eff * 1e6)
-peak_scfh = peak_mmbtu_hr * 1000 # Approx 1000 BTU/scf
+peak_scfh = peak_mmbtu_hr * 1000 
 req_pressure_min = eng_data.get('gas_pressure_min_psi', 0.5)
 req_pressure_max = eng_data.get('gas_pressure_max_psi', 5.0)
 
-# Check Pressure
 need_compressor = False
 if supply_pressure_psi < req_pressure_min:
     need_compressor = True
@@ -447,10 +450,8 @@ if supply_pressure_psi < req_pressure_min:
 else:
     pressure_status = "Pressure OK"
 
-# Pipe Sizing (Simplified Velocity Model for Estimation)
-# Target Velocity ~20 m/s (65 ft/s) is typical for main feeders
 actual_flow_acfm = peak_scfh * (14.7 / (supply_pressure_psi + 14.7)) / 60 # ACFM
-target_area_ft2 = actual_flow_acfm / (65 * 60) # A = Q/V (ft2)
+target_area_ft2 = actual_flow_acfm / (65 * 60) # Target 65 fps (20 m/s)
 target_dia_in = math.sqrt(target_area_ft2 * 4 / math.pi) * 12
 rec_pipe_dia = max(4, math.ceil(target_dia_in)) # Min 4 inch
 
@@ -462,11 +463,10 @@ nox_tpy = (raw_nox * total_bhp * 8760) / 907185
 req_scr = nox_tpy > limit_nox_tpy
 urea_vol_yr = p_gross_req * 1.5 * 8760 if req_scr else 0
 
-# Cost of After-Treatment
 at_capex_total = 0
 if req_scr:
     at_capex_total += (installed_cap * 1000) * cost_scr_kw
-if force_oxicat: # Basic logic, can be expanded to check CO limits
+if force_oxicat: 
     at_capex_total += (installed_cap * 1000) * cost_oxicat_kw
 
 # --- F. FOOTPRINT ---
@@ -481,14 +481,12 @@ total_area_m2 = (area_gen + area_lng + area_chp + area_bess + area_sub) * 1.2
 base_gen_cost_kw = gen_unit_cost 
 gen_cost_total = (installed_cap * 1000) * base_gen_cost_kw / 1e6 
 
-# Installation Ratio Calculation (User Input Driven)
 idx_install = gen_install_cost / gen_unit_cost
 
 idx_chp = 0.20 if include_chp else 0
 idx_bess = 0.30 if use_bess else 0
 idx_lng = 0.25 if include_lng else 0
 
-# Pipe Cost Estimate (Rough: $200/m for 6", $400/m for 12")
 pipe_cost_m = 50 * rec_pipe_dia 
 pipeline_capex_m = (pipe_cost_m * dist_gas_main_m) / 1e6
 
@@ -650,8 +648,6 @@ with t4:
     
     # Recalculate Total CAPEX
     final_capex_df = edited_capex.copy()
-    # Logic: If item is "Gas Pipeline" or "Emissions Control", use the fixed cost calculated above, ignore index scaling from Gen Unit
-    # Otherwise scale from Gen Unit
     
     total_capex = 0
     for index, row in final_capex_df.iterrows():
@@ -662,8 +658,6 @@ with t4:
         else:
             total_capex += gen_cost_total * row['Default Index']
             
-    # Update the DF for display logic if needed, but total_capex is what matters
-    
     # 2. LCOE Calculation
     mwh_year = p_net_req * 8760
     fuel_cost_year = (heat_input_mw * 3.41214 * 8760) * gas_price
@@ -706,4 +700,4 @@ with t4:
 
 # --- FOOTER ---
 st.markdown("---")
-st.caption("CAT Prime Solution Designer | v2026.13 | Integrated Gas & Consolidated BOP")
+st.caption("CAT Prime Solution Designer | v2026.13.1 | Fixed Variables")
