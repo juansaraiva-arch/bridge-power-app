@@ -5,10 +5,10 @@ import math
 import plotly.express as px
 
 # --- PAGE CONFIGURATION ---
-st.set_page_config(page_title="CAT Prime Solution Designer", page_icon="⚡", layout="wide")
+st.set_page_config(page_title="CAT Prime Solution Designer v13", page_icon="⚡", layout="wide")
 
 # ==============================================================================
-# 0. DATA LIBRARY (FROM EXCEL "Libreria.xlsx")
+# 0. DATA LIBRARY (INTEGRATED FROM EXCEL "Libreria.xlsx")
 # ==============================================================================
 
 leps_gas_library = {
@@ -17,13 +17,16 @@ leps_gas_library = {
         "type": "High Speed",
         "iso_rating_mw": 1.9,
         "electrical_efficiency": 0.392,
-        "heat_rate_lhv": 8780, # 8.78 MMBtu/MWh
+        "heat_rate_lhv": 8780,
         "step_load_pct": 40.0,
-        "emissions_nox": 0.5, # approx from 0.25-0.5 g/Nm3
+        "emissions_nox": 0.5,
         "emissions_co": 2.5,
         "default_for": 3.0, 
-        "default_maint": 6.0, # 91% Avail
-        "est_cost_kw": 775.0 
+        "default_maint": 6.0,
+        "est_cost_kw": 775.0,      
+        "est_install_kw": 300.0,   # Low install cost (Mobile)
+        "gas_pressure_min_psi": 0.5,
+        "gas_pressure_max_psi": 5.0
     },
     "G3520FR": {
         "description": "Fast Response Gen Set (High Speed)",
@@ -31,38 +34,47 @@ leps_gas_library = {
         "iso_rating_mw": 2.5,
         "electrical_efficiency": 0.386,
         "heat_rate_lhv": 8836,
-        "step_load_pct": 55.0, # Fast Response
+        "step_load_pct": 55.0,
         "emissions_nox": 0.5,
         "emissions_co": 2.1,
         "default_for": 3.0,
-        "default_maint": 6.0, # 91% Avail
-        "est_cost_kw": 575.0
+        "default_maint": 6.0,
+        "est_cost_kw": 575.0,
+        "est_install_kw": 650.0,
+        "gas_pressure_min_psi": 0.5,
+        "gas_pressure_max_psi": 5.0
     },
     "G3520K": {
         "description": "High Efficiency Gen Set (High Speed)",
         "type": "High Speed",
-        "iso_rating_mw": 2.4, # Per Excel
+        "iso_rating_mw": 2.4,
         "electrical_efficiency": 0.453,
         "heat_rate_lhv": 7638,
         "step_load_pct": 35.0,
-        "emissions_nox": 0.3, # 0.267 g/Nm3
+        "emissions_nox": 0.3,
         "emissions_co": 2.3,
         "default_for": 3.0,
-        "default_maint": 6.0, # 91% Avail
-        "est_cost_kw": 575.0
+        "default_maint": 6.0,
+        "est_cost_kw": 575.0,
+        "est_install_kw": 650.0,
+        "gas_pressure_min_psi": 0.5,
+        "gas_pressure_max_psi": 5.0
     },
     "CG260-16": {
         "description": "Cogeneration Specialist (High Speed)",
         "type": "High Speed",
-        "iso_rating_mw": 3.96, # 3.957 MW
+        "iso_rating_mw": 3.96,
         "electrical_efficiency": 0.434,
         "heat_rate_lhv": 7860,
         "step_load_pct": 25.0,
         "emissions_nox": 0.5,
         "emissions_co": 1.8,
         "default_for": 3.0,
-        "default_maint": 5.0, # 92% Avail
-        "est_cost_kw": 675.0
+        "default_maint": 5.0,
+        "est_cost_kw": 675.0,
+        "est_install_kw": 1100.0,
+        "gas_pressure_min_psi": 7.25,
+        "gas_pressure_max_psi": 145.0
     },
     "Titan 130": {
         "description": "Solar Gas Turbine (16.5 MW)",
@@ -71,11 +83,14 @@ leps_gas_library = {
         "electrical_efficiency": 0.354,
         "heat_rate_lhv": 9630,
         "step_load_pct": 15.0,
-        "emissions_nox": 0.6, # ~25 ppm
+        "emissions_nox": 0.6,
         "emissions_co": 0.6,
         "default_for": 1.0,
-        "default_maint": 2.0, # 97% Avail
-        "est_cost_kw": 775.0
+        "default_maint": 2.0,
+        "est_cost_kw": 775.0,
+        "est_install_kw": 1000.0,
+        "gas_pressure_min_psi": 300.0,
+        "gas_pressure_max_psi": 400.0
     },
     "Titan 250": {
         "description": "Solar Gas Turbine (23.2 MW)",
@@ -87,8 +102,11 @@ leps_gas_library = {
         "emissions_nox": 0.6,
         "emissions_co": 0.6,
         "default_for": 1.0,
-        "default_maint": 2.0, # 97% Avail
-        "est_cost_kw": 775.0
+        "default_maint": 2.0,
+        "est_cost_kw": 775.0,
+        "est_install_kw": 1000.0,
+        "gas_pressure_min_psi": 400.0,
+        "gas_pressure_max_psi": 500.0
     },
     "Titan 350": {
         "description": "Solar Gas Turbine (38.0 MW)",
@@ -100,21 +118,27 @@ leps_gas_library = {
         "emissions_nox": 0.6,
         "emissions_co": 0.6,
         "default_for": 1.0,
-        "default_maint": 2.0, # 97% Avail
-        "est_cost_kw": 775.0
+        "default_maint": 2.0,
+        "est_cost_kw": 775.0,
+        "est_install_kw": 1000.0,
+        "gas_pressure_min_psi": 400.0,
+        "gas_pressure_max_psi": 500.0
     },
     "G20CM34": {
         "description": "Medium Speed Baseload Platform",
         "type": "Medium Speed",
-        "iso_rating_mw": 9.76, # Per Excel
+        "iso_rating_mw": 9.76,
         "electrical_efficiency": 0.475,
         "heat_rate_lhv": 7480,
         "step_load_pct": 10.0,
         "emissions_nox": 0.5,
         "emissions_co": 0.5,
         "default_for": 3.0, 
-        "default_maint": 5.0, # 92% Avail
-        "est_cost_kw": 700.0
+        "default_maint": 5.0,
+        "est_cost_kw": 700.0,
+        "est_install_kw": 1250.0, # High civil work
+        "gas_pressure_min_psi": 90.0,
+        "gas_pressure_max_psi": 110.0
     }
 }
 
@@ -132,26 +156,26 @@ with st.sidebar:
 is_imperial = "Imperial" in unit_system
 is_50hz = freq_hz == 50
 
-# Unit Definitions
 if is_imperial:
     u_temp, u_dist, u_area_s, u_area_l = "°F", "ft", "ft²", "Acres"
     u_vol, u_mass, u_power = "gal", "Short Tons", "MW"
     u_energy, u_therm, u_water = "MWh", "MMBtu", "gal/day"
+    u_press = "psig"
 else:
     u_temp, u_dist, u_area_s, u_area_l = "°C", "m", "m²", "Ha"
     u_vol, u_mass, u_power = "m³", "Tonnes", "MW"
     u_energy, u_therm, u_water = "MWh", "GJ", "m³/day"
+    u_press = "Bar"
 
-# Dictionary
 t = {
     "title": f"⚡ CAT Prime Solution Designer ({freq_hz}Hz)",
-    "subtitle": "**Sovereign Energy Solutions.**\nAdvanced modeling for Off-Grid Microgrids, Tri-Generation, and ROI Analysis.",
+    "subtitle": "**Sovereign Energy Solutions.**\nAdvanced modeling for Off-Grid Microgrids, Tri-Generation, and Gas Infrastructure.",
     "sb_1": "1. Data Center Profile",
     "sb_2": "2. Generation Technology",
     "sb_3": "3. Site & Neighbors",
     "sb_4": "4. Strategy (BESS & LNG)",
     "sb_5": "5. Cooling & Tri-Gen",
-    "sb_6": "6. Regulatory & Urea",
+    "sb_6": "6. Regulatory & Emissions",
     "sb_7": "7. Economics & ROI",
     "kpi_net": "Net Capacity",
     "kpi_pue": "Projected PUE"
@@ -177,8 +201,6 @@ with st.sidebar:
     avail_req = st.number_input("Required Availability (%)", 90.0, 99.99999, 99.99, format="%.5f")
     step_load_req = st.number_input("Expected Step Load (%)", 0.0, 100.0, def_step_load)
     dc_aux_pct = st.number_input("DC Building Auxiliaries (%)", 0.0, 20.0, 5.0) / 100.0
-    
-    # Distribution Losses Variable
     dist_loss_pct = st.number_input("Distribution Losses (%)", 0.0, 10.0, 1.0) / 100.0
 
     st.divider()
@@ -206,10 +228,13 @@ with st.sidebar:
         hr_user = st.number_input("Heat Rate LHV (Btu/kWh)", 5000.0, 15000.0, def_hr_lhv, format="%.0f")
         final_elec_eff = 3412.14 / hr_user
 
-    # UNIT COST INPUT
+    # COST SECTION (Consolidated)
     st.markdown("💰 **Asset Valuation**")
-    gen_unit_cost = st.number_input("Generator Unit Cost ($/kW)", 100.0, 3000.0, eng_data.get('est_cost_kw', 500.0), step=10.0)
-
+    gen_unit_cost = st.number_input("Equipment Cost ($/kW)", 100.0, 3000.0, eng_data['est_cost_kw'], step=10.0)
+    
+    # NEW: Consolidated Installation Cost
+    gen_install_cost = st.number_input("Installation Cost ($/kW)", 50.0, 3000.0, eng_data['est_install_kw'], step=10.0, help="Includes Civil, Engineering & Electrical BOP")
+    
     step_load_cap = st.number_input("Unit Step Load Capability (%)", 0.0, 100.0, eng_data['step_load_pct'])
     
     st.caption("Availability Parameters (N+M+S)")
@@ -219,17 +244,12 @@ with st.sidebar:
     
     gen_parasitic_pct = st.number_input("Gen. Auxiliaries (%)", 0.0, 10.0, 2.5) / 100.0
 
-    c_e1, c_e2 = st.columns(2)
-    raw_nox = c_e1.number_input("Native NOx (g/bhp-hr)", 0.0, 10.0, eng_data['emissions_nox'])
-    raw_co = c_e2.number_input("Native CO (g/bhp-hr)", 0.0, 10.0, eng_data['emissions_co'])
-
     st.divider()
 
-    # --- 3. SITE & NEIGHBORS ---
+    # --- 3. SITE & GAS INFRASTRUCTURE ---
     st.header(t["sb_3"])
     
     derate_mode = st.radio("Derate Method", ["Auto-Calculate", "Manual Entry"])
-    
     derate_factor_calc = 1.0
     
     if derate_mode == "Auto-Calculate":
@@ -243,18 +263,28 @@ with st.sidebar:
             site_alt_m = st.number_input(f"Altitude ({u_dist})", 0, 4000, 100)
         
         methane_number = st.number_input("Gas Methane Number (MN)", 30, 100, 80)
-        
         loss_temp = max(0, (site_temp_c - 25) * 0.01) 
         loss_alt = max(0, (site_alt_m - 100) * 0.0001)
-        # Simple MN penalty: 0.5% per point below 75
         loss_mn = max(0, (75 - methane_number) * 0.005)
-        
         derate_factor_calc = 1.0 - (loss_temp + loss_alt + loss_mn)
-        st.info(f"Calculated Derate: {derate_factor_calc:.3f} (MN Loss: {loss_mn:.1%})")
-        
+        st.info(f"Derate: {derate_factor_calc:.3f} (MN Loss: {loss_mn:.1%})")
     else:
         manual_derate_pct = st.number_input("Manual Derate (%)", 0.0, 50.0, 5.0)
         derate_factor_calc = 1.0 - (manual_derate_pct / 100.0)
+
+    # NEW: GAS PIPELINE INPUTS
+    st.markdown("⛽ **Gas Infrastructure**")
+    dist_gas_main_m = st.number_input("Distance to Gas Main (m)", 10.0, 20000.0, 1000.0, step=50.0)
+    
+    # Pressure Input (Dynamic Units)
+    if is_imperial:
+        supply_pressure_disp = st.number_input(f"Supply Pressure ({u_press})", 5.0, 1000.0, 60.0, step=5.0) # USA Default 60 psig
+        supply_pressure_psi = supply_pressure_disp
+        supply_pressure_bar = supply_pressure_psi * 0.0689476
+    else:
+        supply_pressure_disp = st.number_input(f"Supply Pressure ({u_press})", 0.5, 100.0, 4.1, step=0.5) # Metric Default ~4.1 Bar
+        supply_pressure_bar = supply_pressure_disp
+        supply_pressure_psi = supply_pressure_bar * 14.5038
 
     dist_neighbor_m = st.number_input(f"Dist. to Neighbor ({u_dist})", 10.0, 5000.0, 100.0)
     if is_imperial: dist_neighbor_m = dist_neighbor_m / 3.28084
@@ -290,11 +320,17 @@ with st.sidebar:
 
     st.divider()
     
-    # --- 6. REGULATORY ---
+    # --- 6. REGULATORY & EMISSIONS ---
     st.header(t["sb_6"])
     reg_zone = st.selectbox("Regulatory Zone", ["USA - EPA Major", "EU Standard", "LatAm / No-Reg"])
     limit_nox_tpy = 250.0 if "EPA" in reg_zone else (150.0 if "EU" in reg_zone else 9999.0)
     urea_days = st.number_input("Urea Storage (Days)", 1, 30, 7)
+    
+    # NEW: After-Treatment Cost Inputs
+    st.markdown("🛠️ **After-Treatment Costs**")
+    cost_scr_kw = st.number_input("SCR System Cost ($/kW)", 0.0, 200.0, 60.0, help="Selective Catalytic Reduction (NOx)")
+    cost_oxicat_kw = st.number_input("Oxidation Cat Cost ($/kW)", 0.0, 100.0, 15.0, help="CO Reduction Catalyst")
+    force_oxicat = st.checkbox("Force Oxicat Inclusion", value=False)
 
     st.divider()
 
@@ -332,10 +368,9 @@ if is_50hz:
 else:
     rec_voltage = "13.8 kV" if p_gross_req < 25 else ("34.5 kV" if p_gross_req > 60 else "13.8 kV / 34.5 kV")
 
-# --- B. FLEET & RELIABILITY (SENSITIVE ALGORITHM) ---
+# --- B. FLEET & RELIABILITY ---
 unit_site_cap = unit_size_iso * derate_factor_calc
 
-# 1. N (Operation)
 if use_bess:
     target_load_factor = 0.95 
     n_running = math.ceil(p_gross_req / (unit_site_cap * target_load_factor))
@@ -356,22 +391,13 @@ else:
     bess_power = 0
     bess_energy = 0
 
-# 2. M (Maintenance)
 n_maint = math.ceil(n_running * maint_outage_pct)
-
-# 3. S (Standby) - SENSITIVE ALGORITHM
-if avail_req < 99.0:
-    n_red_tier = 1 
-elif avail_req < 99.9:
-    n_red_tier = 1 
-elif avail_req < 99.99:
-    n_red_tier = 2 
-else: # >= 99.99
-    n_red_tier = 3 
-
+if avail_req < 99.0: n_red_tier = 1 
+elif avail_req < 99.9: n_red_tier = 1 
+elif avail_req < 99.99: n_red_tier = 2 
+else: n_red_tier = 3 
 n_forced_buffer = math.ceil(n_running * forced_outage_pct)
 n_reserve = max(n_forced_buffer, n_red_tier)
-
 n_total = n_running + n_maint + n_reserve
 installed_cap = n_total * unit_site_cap
 
@@ -399,19 +425,49 @@ else:
 
 water_cons_daily_m3 = water_cons_m3_hr * 24
 
-# --- D. LNG ---
+# --- D. LNG & GAS PIPELINE ALGORITHM ---
+# 1. Consumption
 total_gas_energy_day_mmbtu = (p_gross_req * 24 * 3412.14) / (real_elec_eff * 1e6)
 gas_vol_day_m3 = total_gas_energy_day_mmbtu * 28.26
 required_storage_m3 = (gas_vol_day_m3 / 600) * autonomy_days if include_lng else 0
 num_tanks = math.ceil(required_storage_m3 / 3000) if include_lng else 0
 
-# --- E. EMISSIONS ---
+# 2. Pipeline Calculation
+# Peak Flow Calculation (SCFH)
+peak_mmbtu_hr = (p_gross_req * 3412.14) / (real_elec_eff * 1e6)
+peak_scfh = peak_mmbtu_hr * 1000 # Approx 1000 BTU/scf
+req_pressure_min = eng_data.get('gas_pressure_min_psi', 0.5)
+req_pressure_max = eng_data.get('gas_pressure_max_psi', 5.0)
+
+# Check Pressure
+need_compressor = False
+if supply_pressure_psi < req_pressure_min:
+    need_compressor = True
+    pressure_status = f"LOW PRESSURE: {supply_pressure_psi:.1f} psi < {req_pressure_min:.1f} psi (Compressor Req)"
+else:
+    pressure_status = "Pressure OK"
+
+# Pipe Sizing (Simplified Velocity Model for Estimation)
+# Target Velocity ~20 m/s (65 ft/s) is typical for main feeders
+actual_flow_acfm = peak_scfh * (14.7 / (supply_pressure_psi + 14.7)) / 60 # ACFM
+target_area_ft2 = actual_flow_acfm / (65 * 60) # A = Q/V (ft2)
+target_dia_in = math.sqrt(target_area_ft2 * 4 / math.pi) * 12
+rec_pipe_dia = max(4, math.ceil(target_dia_in)) # Min 4 inch
+
+# --- E. EMISSIONS & AFTER-TREATMENT ---
 attenuation = 20 * math.log10(dist_neighbor_m)
 noise_rec = source_noise_dba + (10 * math.log10(n_running)) - attenuation
 total_bhp = p_gross_req * 1341
 nox_tpy = (raw_nox * total_bhp * 8760) / 907185
 req_scr = nox_tpy > limit_nox_tpy
 urea_vol_yr = p_gross_req * 1.5 * 8760 if req_scr else 0
+
+# Cost of After-Treatment
+at_capex_total = 0
+if req_scr:
+    at_capex_total += (installed_cap * 1000) * cost_scr_kw
+if force_oxicat: # Basic logic, can be expanded to check CO limits
+    at_capex_total += (installed_cap * 1000) * cost_oxicat_kw
 
 # --- F. FOOTPRINT ---
 area_gen = n_total * 200 
@@ -421,23 +477,29 @@ area_bess = bess_power * 30
 area_sub = 2500
 total_area_m2 = (area_gen + area_lng + area_chp + area_bess + area_sub) * 1.2
 
-# --- G. FINANCIALS (UPDATED WITH UNIT COST) ---
+# --- G. FINANCIALS (CONSOLIDATED) ---
 base_gen_cost_kw = gen_unit_cost 
 gen_cost_total = (installed_cap * 1000) * base_gen_cost_kw / 1e6 
 
-idx_elec = 0.20
-idx_civil = 0.15
+# Installation Ratio Calculation (User Input Driven)
+idx_install = gen_install_cost / gen_unit_cost
+
 idx_chp = 0.20 if include_chp else 0
 idx_bess = 0.30 if use_bess else 0
 idx_lng = 0.25 if include_lng else 0
 
+# Pipe Cost Estimate (Rough: $200/m for 6", $400/m for 12")
+pipe_cost_m = 50 * rec_pipe_dia 
+pipeline_capex_m = (pipe_cost_m * dist_gas_main_m) / 1e6
+
 cost_items = [
     {"Item": "Generation Units", "Default Index": 1.00, "Cost ($M)": gen_cost_total},
-    {"Item": "Electrical (BOP)", "Default Index": idx_elec, "Cost ($M)": gen_cost_total * idx_elec},
-    {"Item": "Civil & Engineering", "Default Index": idx_civil, "Cost ($M)": gen_cost_total * idx_civil},
+    {"Item": "Installation & BOP", "Default Index": idx_install, "Cost ($M)": gen_cost_total * idx_install},
     {"Item": "Tri-Gen Plant", "Default Index": idx_chp, "Cost ($M)": gen_cost_total * idx_chp},
     {"Item": "BESS System", "Default Index": idx_bess, "Cost ($M)": gen_cost_total * idx_bess},
     {"Item": "LNG Infra", "Default Index": idx_lng, "Cost ($M)": gen_cost_total * idx_lng},
+    {"Item": "Gas Pipeline", "Default Index": 0.0, "Cost ($M)": pipeline_capex_m},
+    {"Item": "Emissions Control", "Default Index": 0.0, "Cost ($M)": at_capex_total / 1e6},
 ]
 df_capex_base = pd.DataFrame(cost_items)
 
@@ -537,6 +599,7 @@ with t2:
             st.info(f"SCR Required. Urea Consumption: {urea_vol_yr:,.0f} L/yr")
             tank_u = math.ceil((urea_vol_yr/365)*urea_days / 30000)
             st.write(f"**Urea Tanks ({urea_days} days):** {tank_u}x 30kL Tanks")
+            st.write(f"**SCR CAPEX:** ${at_capex_total/1e6:.1f} M")
         else:
             st.success("No SCR Required.")
 
@@ -554,7 +617,15 @@ with t3:
         st.metric(f"Water Consumption (WUE)", f"{disp_water:,.0f} {u_water}")
 
     with col2:
-        st.subheader("LNG Sovereignty")
+        st.subheader("LNG & Gas Infrastructure")
+        st.markdown(f"**Pipeline:** {dist_gas_main_m}m @ {supply_pressure_disp:.1f} {u_press}")
+        if need_compressor:
+            st.error(f"🚨 {pressure_status}")
+        else:
+            st.success(f"✅ {pressure_status}")
+        
+        st.metric("Rec. Pipe Diameter", f"{rec_pipe_dia:.0f} inches")
+        
         if include_lng:
             st.metric("Required LNG Storage", f"{disp_lng_store:,.0f} {u_vol}")
             st.write(f"**Tanks Required:** {num_tanks}x Vertical Cryo")
@@ -565,11 +636,13 @@ with t4:
     st.subheader("Financial Feasibility & ROI")
     
     # 1. Cost Index Editor
+    st.info(f"**Inst. Ratio Auto-Calc:** Installation Cost (${gen_install_cost:.0f}/kW) vs Equipment Cost (${gen_unit_cost:.0f}/kW)")
+    
     st.markdown(f"👇 **Edit Indices to Adjust CAPEX:** (Base: **${gen_unit_cost:.0f}/kW**)")
     edited_capex = st.data_editor(
         df_capex_base, 
         column_config={
-            "Default Index": st.column_config.NumberColumn("Cost Index (Ratio)", min_value=0.0, max_value=5.0, step=0.01),
+            "Default Index": st.column_config.NumberColumn("Cost Index", min_value=0.0, max_value=5.0, step=0.01),
             "Cost ($M)": st.column_config.NumberColumn("Calculated Cost", format="$%.2fM", disabled=True)
         },
         use_container_width=True
@@ -577,8 +650,19 @@ with t4:
     
     # Recalculate Total CAPEX
     final_capex_df = edited_capex.copy()
-    final_capex_df["Cost ($M)"] = gen_cost_total * final_capex_df["Default Index"]
-    total_capex = final_capex_df["Cost ($M)"].sum()
+    # Logic: If item is "Gas Pipeline" or "Emissions Control", use the fixed cost calculated above, ignore index scaling from Gen Unit
+    # Otherwise scale from Gen Unit
+    
+    total_capex = 0
+    for index, row in final_capex_df.iterrows():
+        if row['Item'] in ["Gas Pipeline", "Emissions Control"]:
+            total_capex += row['Cost ($M)']
+        elif row['Item'] == "Generation Units":
+            total_capex += gen_cost_total
+        else:
+            total_capex += gen_cost_total * row['Default Index']
+            
+    # Update the DF for display logic if needed, but total_capex is what matters
     
     # 2. LCOE Calculation
     mwh_year = p_net_req * 8760
@@ -622,4 +706,4 @@ with t4:
 
 # --- FOOTER ---
 st.markdown("---")
-st.caption("CAT Prime Solution Designer | v2026.9")
+st.caption("CAT Prime Solution Designer | v2026.13 | Integrated Gas & Consolidated BOP")
