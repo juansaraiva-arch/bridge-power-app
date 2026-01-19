@@ -5,72 +5,116 @@ import math
 import plotly.express as px
 
 # --- PAGE CONFIGURATION ---
-st.set_page_config(page_title="CAT Prime Power Calculator v2026.8", page_icon="⚡", layout="wide")
+st.set_page_config(page_title="CAT Prime Solution Designer", page_icon="⚡", layout="wide")
 
 # ==============================================================================
-# 0. DATA LIBRARY (CATERPILLAR LEPS)
+# 0. DATA LIBRARY (FROM EXCEL "Libreria.xlsx")
 # ==============================================================================
 
 leps_gas_library = {
     "XGC1900": {
-        "description": "Mobile Power Module (Rental Spec)",
+        "description": "Mobile Power Module (High Speed)",
         "type": "High Speed",
         "iso_rating_mw": 1.9,
-        "electrical_efficiency": 0.415,
+        "electrical_efficiency": 0.392,
+        "heat_rate_lhv": 8780, # 8.78 MMBtu/MWh
         "step_load_pct": 40.0,
-        "emissions_nox": 1.0,
-        "emissions_co": 2.6,
-        "default_for": 2.0,
-        "default_maint": 5.0,
-        "est_cost_kw": 550.0 # Mobile packaging adds cost
+        "emissions_nox": 0.5, # approx from 0.25-0.5 g/Nm3
+        "emissions_co": 2.5,
+        "default_for": 3.0, 
+        "default_maint": 6.0, # 91% Avail
+        "est_cost_kw": 775.0 
     },
-    "G3520H": {
-        "description": "High Power Density (Data Center)",
+    "G3520FR": {
+        "description": "Fast Response Gen Set (High Speed)",
         "type": "High Speed",
         "iso_rating_mw": 2.5,
-        "electrical_efficiency": 0.453,
-        "step_load_pct": 55.0,
-        "emissions_nox": 1.0,
+        "electrical_efficiency": 0.386,
+        "heat_rate_lhv": 8836,
+        "step_load_pct": 55.0, # Fast Response
+        "emissions_nox": 0.5,
         "emissions_co": 2.1,
-        "default_for": 2.0,
-        "default_maint": 5.0,
-        "est_cost_kw": 480.0 # Volume product, competitive
+        "default_for": 3.0,
+        "default_maint": 6.0, # 91% Avail
+        "est_cost_kw": 575.0
     },
     "G3520K": {
-        "description": "High Efficiency (Low Energy)",
+        "description": "High Efficiency Gen Set (High Speed)",
         "type": "High Speed",
-        "iso_rating_mw": 2.5,
-        "electrical_efficiency": 0.460,
+        "iso_rating_mw": 2.4, # Per Excel
+        "electrical_efficiency": 0.453,
+        "heat_rate_lhv": 7638,
         "step_load_pct": 35.0,
-        "emissions_nox": 0.5,
+        "emissions_nox": 0.3, # 0.267 g/Nm3
         "emissions_co": 2.3,
-        "default_for": 2.5,
-        "default_maint": 5.0,
-        "est_cost_kw": 520.0 # Tech premium
+        "default_for": 3.0,
+        "default_maint": 6.0, # 91% Avail
+        "est_cost_kw": 575.0
     },
     "CG260-16": {
-        "description": "Cogeneration Specialist",
+        "description": "Cogeneration Specialist (High Speed)",
         "type": "High Speed",
-        "iso_rating_mw": 4.5,
-        "electrical_efficiency": 0.446,
+        "iso_rating_mw": 3.96, # 3.957 MW
+        "electrical_efficiency": 0.434,
+        "heat_rate_lhv": 7860,
         "step_load_pct": 25.0,
-        "emissions_nox": 1.0,
+        "emissions_nox": 0.5,
         "emissions_co": 1.8,
         "default_for": 3.0,
-        "default_maint": 4.0,
-        "est_cost_kw": 580.0 # German engineering
+        "default_maint": 5.0, # 92% Avail
+        "est_cost_kw": 675.0
+    },
+    "Titan 130": {
+        "description": "Solar Gas Turbine (16.5 MW)",
+        "type": "Gas Turbine",
+        "iso_rating_mw": 16.5,
+        "electrical_efficiency": 0.354,
+        "heat_rate_lhv": 9630,
+        "step_load_pct": 15.0,
+        "emissions_nox": 0.6, # ~25 ppm
+        "emissions_co": 0.6,
+        "default_for": 1.0,
+        "default_maint": 2.0, # 97% Avail
+        "est_cost_kw": 775.0
+    },
+    "Titan 250": {
+        "description": "Solar Gas Turbine (23.2 MW)",
+        "type": "Gas Turbine",
+        "iso_rating_mw": 23.2,
+        "electrical_efficiency": 0.386,
+        "heat_rate_lhv": 8670,
+        "step_load_pct": 15.0,
+        "emissions_nox": 0.6,
+        "emissions_co": 0.6,
+        "default_for": 1.0,
+        "default_maint": 2.0, # 97% Avail
+        "est_cost_kw": 775.0
+    },
+    "Titan 350": {
+        "description": "Solar Gas Turbine (38.0 MW)",
+        "type": "Gas Turbine",
+        "iso_rating_mw": 38.0,
+        "electrical_efficiency": 0.402,
+        "heat_rate_lhv": 8495,
+        "step_load_pct": 15.0,
+        "emissions_nox": 0.6,
+        "emissions_co": 0.6,
+        "default_for": 1.0,
+        "default_maint": 2.0, # 97% Avail
+        "est_cost_kw": 775.0
     },
     "G20CM34": {
         "description": "Medium Speed Baseload Platform",
         "type": "Medium Speed",
-        "iso_rating_mw": 10.3,
-        "electrical_efficiency": 0.489,
+        "iso_rating_mw": 9.76, # Per Excel
+        "electrical_efficiency": 0.475,
+        "heat_rate_lhv": 7480,
         "step_load_pct": 10.0,
-        "emissions_nox": 0.6,
+        "emissions_nox": 0.5,
         "emissions_co": 0.5,
-        "default_for": 4.0, 
-        "default_maint": 3.5,
-        "est_cost_kw": 650.0 # Heavy iron cost
+        "default_for": 3.0, 
+        "default_maint": 5.0, # 92% Avail
+        "est_cost_kw": 700.0
     }
 }
 
@@ -88,6 +132,7 @@ with st.sidebar:
 is_imperial = "Imperial" in unit_system
 is_50hz = freq_hz == 50
 
+# Unit Definitions
 if is_imperial:
     u_temp, u_dist, u_area_s, u_area_l = "°F", "ft", "ft²", "Acres"
     u_vol, u_mass, u_power = "gal", "Short Tons", "MW"
@@ -97,8 +142,9 @@ else:
     u_vol, u_mass, u_power = "m³", "Tonnes", "MW"
     u_energy, u_therm, u_water = "MWh", "GJ", "m³/day"
 
+# Dictionary
 t = {
-    "title": f"⚡ CAT Prime Power Calculator (v2026.8 - {freq_hz}Hz)",
+    "title": f"⚡ CAT Prime Solution Designer ({freq_hz}Hz)",
     "subtitle": "**Sovereign Energy Solutions.**\nAdvanced modeling for Off-Grid Microgrids, Tri-Generation, and ROI Analysis.",
     "sb_1": "1. Data Center Profile",
     "sb_2": "2. Generation Technology",
@@ -132,6 +178,7 @@ with st.sidebar:
     step_load_req = st.number_input("Expected Step Load (%)", 0.0, 100.0, def_step_load)
     dc_aux_pct = st.number_input("DC Building Auxiliaries (%)", 0.0, 20.0, 5.0) / 100.0
     
+    # Distribution Losses Variable
     dist_loss_pct = st.number_input("Distribution Losses (%)", 0.0, 10.0, 1.0) / 100.0
 
     st.divider()
@@ -139,7 +186,7 @@ with st.sidebar:
     # --- 2. GENERATION TECH ---
     st.header(t["sb_2"])
     
-    selected_model = st.selectbox("Select CAT Engine Model", list(leps_gas_library.keys()))
+    selected_model = st.selectbox("Select CAT/Solar Model", list(leps_gas_library.keys()))
     eng_data = leps_gas_library[selected_model]
     st.caption(f"**{eng_data['description']}**")
     
@@ -147,7 +194,7 @@ with st.sidebar:
     
     def_mw = eng_data['iso_rating_mw']
     def_eff_pct = eng_data['electrical_efficiency'] * 100.0
-    def_hr_lhv = 3412.14 / eng_data['electrical_efficiency']
+    def_hr_lhv = eng_data['heat_rate_lhv']
     
     unit_size_iso = st.number_input("Unit Prime Rating (ISO MW)", 0.1, 100.0, def_mw, format="%.2f")
     
@@ -159,9 +206,9 @@ with st.sidebar:
         hr_user = st.number_input("Heat Rate LHV (Btu/kWh)", 5000.0, 15000.0, def_hr_lhv, format="%.0f")
         final_elec_eff = 3412.14 / hr_user
 
-    # NEW: UNIT COST INPUT
+    # UNIT COST INPUT
     st.markdown("💰 **Asset Valuation**")
-    gen_unit_cost = st.number_input("Generator Unit Cost ($/kW)", 100.0, 2000.0, eng_data.get('est_cost_kw', 500.0), step=10.0)
+    gen_unit_cost = st.number_input("Generator Unit Cost ($/kW)", 100.0, 3000.0, eng_data.get('est_cost_kw', 500.0), step=10.0)
 
     step_load_cap = st.number_input("Unit Step Load Capability (%)", 0.0, 100.0, eng_data['step_load_pct'])
     
@@ -199,6 +246,7 @@ with st.sidebar:
         
         loss_temp = max(0, (site_temp_c - 25) * 0.01) 
         loss_alt = max(0, (site_alt_m - 100) * 0.0001)
+        # Simple MN penalty: 0.5% per point below 75
         loss_mn = max(0, (75 - methane_number) * 0.005)
         
         derate_factor_calc = 1.0 - (loss_temp + loss_alt + loss_mn)
@@ -311,22 +359,17 @@ else:
 # 2. M (Maintenance)
 n_maint = math.ceil(n_running * maint_outage_pct)
 
-# 3. S (Standby) - NEW ALGORITHM
-# Calculate required redundancy based on Availability Target Tier
+# 3. S (Standby) - SENSITIVE ALGORITHM
 if avail_req < 99.0:
-    n_red_tier = 1 # Minimum N+1
+    n_red_tier = 1 
 elif avail_req < 99.9:
-    n_red_tier = 1 # N+1 (but strictly enforced)
+    n_red_tier = 1 
 elif avail_req < 99.99:
-    n_red_tier = 2 # N+2 (Tier III/IV typical)
+    n_red_tier = 2 
 else: # >= 99.99
-    # Extreme availability requires covering multiple simultaneous failures
-    n_red_tier = 3 # N+2 + Buffer
+    n_red_tier = 3 
 
-# Calculate FOR buffer (Probability of failure)
 n_forced_buffer = math.ceil(n_running * forced_outage_pct)
-
-# The final Reserve (S) is the maximum of the Tier requirement OR the FOR buffer
 n_reserve = max(n_forced_buffer, n_red_tier)
 
 n_total = n_running + n_maint + n_reserve
@@ -379,7 +422,6 @@ area_sub = 2500
 total_area_m2 = (area_gen + area_lng + area_chp + area_bess + area_sub) * 1.2
 
 # --- G. FINANCIALS (UPDATED WITH UNIT COST) ---
-# Use the input Unit Cost ($/kW) instead of fixed 550
 base_gen_cost_kw = gen_unit_cost 
 gen_cost_total = (installed_cap * 1000) * base_gen_cost_kw / 1e6 
 
@@ -458,7 +500,7 @@ with t1:
         st.write(f"**Site Capacity (Derated):** {unit_site_cap:.2f} MW")
         st.markdown("---")
         st.write(f"**N (Running):** {n_running}")
-        st.write(f"**M (Maintenance @ {maint_outage_pct*100}%):** {n_maint}")
+        st.write(f"**M (Maintenance @ {maint_outage_pct*100:.1f}%):** {n_maint}")
         st.write(f"**S (Standby/Reserve):** {n_reserve}")
         st.caption(f"Reserve logic: Max of FOR Buffer ({n_forced_buffer}) or Tier Requirement ({n_red_tier})")
         st.metric("Total Installed Fleet", f"{n_total} Units", f"{installed_cap:.1f} MW Total")
@@ -580,4 +622,4 @@ with t4:
 
 # --- FOOTER ---
 st.markdown("---")
-st.caption(f"CAT Prime Power Calculator | v2026.8 | {freq_hz}Hz Edition")
+st.caption("CAT Prime Solution Designer | v2026.9")
