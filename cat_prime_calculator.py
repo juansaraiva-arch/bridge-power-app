@@ -5,7 +5,7 @@ import math
 import plotly.express as px
 
 # --- PAGE CONFIGURATION ---
-st.set_page_config(page_title="CAT Prime Solution Designer v15", page_icon="⚡", layout="wide")
+st.set_page_config(page_title="CAT Prime Solution Designer v16", page_icon="⚡", layout="wide")
 
 # ==============================================================================
 # 0. DATA LIBRARY (INTEGRATED FROM EXCEL "Libreria.xlsx")
@@ -236,9 +236,11 @@ with st.sidebar:
         hr_user = st.number_input("Heat Rate LHV (Btu/kWh)", 5000.0, 15000.0, def_hr_lhv, format="%.0f")
         final_elec_eff = 3412.14 / hr_user
 
-    # COST SECTION
+    # COST SECTION (Consolidated)
     st.markdown("💰 **Asset Valuation (USD)**")
     gen_unit_cost = st.number_input("Equipment Cost (USD/kW)", 100.0, 3000.0, eng_data['est_cost_kw'], step=10.0)
+    
+    # Consolidated Installation Cost
     gen_install_cost = st.number_input("Installation Cost (USD/kW)", 50.0, 3000.0, eng_data['est_install_kw'], step=10.0, help="Includes Civil, Engineering & Electrical BOP")
     
     step_load_cap = st.number_input("Unit Step Load Capability (%)", 0.0, 100.0, eng_data['step_load_pct'])
@@ -262,6 +264,7 @@ with st.sidebar:
     # --- 3. SITE, GAS & NOISE ---
     st.header(t["sb_3"])
     
+    # Derate
     derate_mode = st.radio("Derate Method", ["Auto-Calculate", "Manual Entry"])
     derate_factor_calc = 1.0
     
@@ -289,6 +292,7 @@ with st.sidebar:
     st.markdown("⛽ **Gas Infrastructure**")
     dist_gas_main_m = st.number_input("Distance to Gas Main (m)", 10.0, 20000.0, 1000.0, step=50.0)
     
+    # Pressure Input (Dynamic Units)
     if is_imperial:
         supply_pressure_disp = st.number_input(f"Supply Pressure ({u_press})", 5.0, 1000.0, 60.0, step=5.0) 
         supply_pressure_psi = supply_pressure_disp
@@ -559,7 +563,7 @@ c4.metric(t["kpi_pue"], f"{pue_calc:.3f}", f"Cooling: {cooling_mode}")
 st.divider()
 
 # --- TABS ---
-t1, t2, t3, t4 = st.tabs(["⚙️ Engineering", "🧪 Physics & Env", "❄️ Tri-Gen & LNG", "💰 Financials & NPV"])
+t1, t2, t3, t4 = st.tabs(["⚙️ Engineering", "🧪 Physics & Env", "❄️ Tri-Gen & LNG", "💰 Financials & Payback"])
 
 with t1:
     col1, col2 = st.columns(2)
@@ -698,32 +702,35 @@ with t4:
     total_annual_cost = fuel_cost_year + om_cost_year + capex_annualized
     lcoe = total_annual_cost / (mwh_year * 1000)
     
-    # 3. NPV Calculation (New!)
+    # 3. NPV & Payback Calculation
     annual_grid_cost = mwh_year * 1000 * grid_price
     annual_prime_opex = fuel_cost_year + om_cost_year
     annual_savings = annual_grid_cost - annual_prime_opex
     
-    # PV of Savings Annuity
+    # NPV
     if wacc > 0:
         pv_savings = annual_savings * ((1 - (1 + wacc)**-project_years) / wacc)
     else:
         pv_savings = annual_savings * project_years
-    
     npv = pv_savings - (total_capex * 1e6)
     
-    if total_capex > 0:
+    # Payback
+    if annual_savings > 0:
+        payback_years = (total_capex * 1e6) / annual_savings
         roi_simple = (annual_savings / (total_capex * 1e6)) * 100
-        payback_years = (total_capex * 1e6) / annual_savings if annual_savings > 0 else 999
+        payback_str = f"{payback_years:.1f} Years"
     else:
+        payback_years = 999
         roi_simple = 0
-        payback_years = 0
+        payback_str = "N/A"
     
     # Display Financials
-    c_f1, c_f2, c_f3, c_f4 = st.columns(4)
+    c_f1, c_f2, c_f3, c_f4, c_f5 = st.columns(5)
     c_f1.metric("Total CAPEX (USD)", f"${total_capex:.2f} M")
     c_f2.metric("LCOE (Prime)", f"${lcoe:.4f} / kWh")
     c_f3.metric("Annual Savings", f"${annual_savings/1e6:.2f} M")
-    c_f4.metric("NPV (Net Present Value)", f"${npv/1e6:.2f} M", f"ROI: {roi_simple:.1f}%")
+    c_f4.metric("NPV (20yr)", f"${npv/1e6:.2f} M")
+    c_f5.metric("Payback", payback_str, f"ROI: {roi_simple:.1f}%")
     
     st.caption(f"ℹ️ **NPV Logic:** Present Value of {project_years} years of savings discounted at WACC ({wacc*100:.1f}%) minus Initial CAPEX.")
 
@@ -739,4 +746,4 @@ with t4:
 
 # --- FOOTER ---
 st.markdown("---")
-st.caption("CAT Prime Solution Designer | v2026.15 | NPV & Financial Suite")
+st.caption("CAT Prime Solution Designer | v2026.16 | Complete Financial Suite")
