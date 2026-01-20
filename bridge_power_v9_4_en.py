@@ -177,7 +177,7 @@ with st.sidebar:
     dc_type_sel = st.selectbox("Data Center Type", ["AI Factory (Training)", "Hyperscale Standard"])
     is_ai = "AI" in dc_type_sel
     
-    # --- FIX: DEFINING DEFAULTS HERE ---
+    # --- DEFAULTS ---
     def_step_load = 40.0 if is_ai else 10.0
     def_use_bess = True if is_ai else False
     
@@ -209,10 +209,6 @@ with st.sidebar:
     st.info(f"**{eng_data['description']}**")
 
     # 3. Fuel Logic & Properties
-    is_gas = fuel_type_sel == "Natural Gas"
-    is_diesel = fuel_type_sel == "Diesel"
-    is_propane = fuel_type_sel == "Propane"
-    
     virtual_pipe_mode = "None"
     methane_number = 80
     
@@ -223,7 +219,7 @@ with st.sidebar:
     tank_area_unit = 0.0
     truck_capacity = 8000.0 # Default truck size
 
-    if is_gas:
+    if fuel_type_sel == "Natural Gas":
         st.markdown("🔥 **Gas Properties**")
         methane_number = st.number_input("Methane Number (MN)", 30, 100, 80)
         gas_source = st.radio("Supply Method", ["Pipeline", "Virtual Pipeline (LNG)", "Virtual Pipeline (CNG)"])
@@ -250,7 +246,7 @@ with st.sidebar:
             truck_capacity = tank_unit_cap # Usually swap and drop
             tank_area_unit = 60.0
             
-    elif is_diesel:
+    elif fuel_type_sel == "Diesel":
         virtual_pipe_mode = "Diesel"
         st.markdown("🔹 **Diesel Storage Setup**")
         storage_days = st.number_input("Autonomy (Days)", 1, 30, 3)
@@ -260,7 +256,7 @@ with st.sidebar:
         truck_capacity = st.number_input("Truck Delivery Vol (Gal)", 1000, 15000, 8000)
         tank_area_unit = 50.0
         
-    elif is_propane:
+    elif fuel_type_sel == "Propane":
         virtual_pipe_mode = "Propane"
         st.markdown("🔹 **LPG Storage Setup**")
         storage_days = st.number_input("Autonomy (Days)", 1, 30, 5)
@@ -316,7 +312,7 @@ with st.sidebar:
         loss_temp = max(0, (site_temp_c - 25) * 0.01) 
         loss_alt = max(0, (site_alt_m - 100) * 0.0001)
         loss_mn = 0.0
-        if is_gas:
+        if fuel_type_sel == "Natural Gas":
             loss_mn = max(0, (75 - methane_number) * 0.005) 
         derate_factor_calc = 1.0 - (loss_temp + loss_alt + loss_mn)
         st.info(f"Calc Derate: {derate_factor_calc:.3f} (MN Loss: {loss_mn:.1%})")
@@ -377,10 +373,10 @@ with st.sidebar:
     st.header(t["sb_7"])
     st.caption("Rental / PPA Structure")
     
-    if is_gas:
+    if fuel_type_sel == "Natural Gas":
         fuel_price_unit = st.number_input("Gas Price (USD/MMBtu)", 1.0, 20.0, 5.0)
         fuel_price_mmbtu = fuel_price_unit
-    elif is_diesel:
+    elif fuel_type_sel == "Diesel":
         fuel_price_unit = st.number_input("Diesel Price (USD/Gal)", 1.0, 10.0, 3.50)
         fuel_price_mmbtu = fuel_price_unit / 0.138
     else: 
@@ -686,7 +682,6 @@ with t2:
         st.dataframe(df_foot.style.format({f"Area ({u_as})": "{:,.0f}"}), use_container_width=True)
         st.metric("TOTAL LAND REQUIRED", f"{d_area_l:.2f} {u_al}")
         
-        
     with c_e2:
         st.subheader("Emissions & Urea")
         st.write(f"NOx: {nox_tpy:.0f} Tons/yr")
@@ -755,6 +750,3 @@ with t4:
 # --- FOOTER ---
 st.markdown("---")
 st.caption("CAT Bridge Solutions Designer v22.1 | Powered by Prime Engineering Engine")
-
-
-[Image of LNG ISO container]
