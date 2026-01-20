@@ -6,7 +6,7 @@ import plotly.express as px
 import plotly.graph_objects as go
 
 # --- PAGE CONFIGURATION ---
-st.set_page_config(page_title="CAT Bridge Solutions Designer v12", page_icon="🌉", layout="wide")
+st.set_page_config(page_title="CAT Bridge Solutions Designer v12.1", page_icon="🌉", layout="wide")
 
 # ==============================================================================
 # 0. HYBRID DATA LIBRARY (MULTI-FUEL & FREQUENCY)
@@ -134,7 +134,7 @@ else:
     u_press = "Bar"
 
 t = {
-    "title": f"🌉 CAT Bridge Solutions Designer v12 ({freq_hz}Hz)",
+    "title": f"🌉 CAT Bridge Solutions Designer v12.1 ({freq_hz}Hz)",
     "subtitle": "**Time-to-Market Accelerator.**\nEngineering, Logistics & Financial Strategy for Bridge Power.",
     "sb_1": "1. Data Center Profile",
     "sb_2": "2. Technology & Fuel",
@@ -165,7 +165,8 @@ with st.sidebar:
     
     avail_req = st.number_input("Availability Target (%)", 90.0, 99.99999, 99.99, format="%.5f")
     step_load_req = st.number_input("Expected Step Load (%)", 0.0, 100.0, def_step_load)
-    dist_loss_pct = st.number_input("Distribution Losses (%)", 0.0, 10.0, 3.0) / 100
+    dc_aux_pct = st.number_input("DC Building Auxiliaries (%)", 0.0, 20.0, 5.0) / 100.0
+    dist_loss_pct = st.number_input("Distribution Losses (%)", 0.0, 10.0, 1.0) / 100.0
 
     st.divider()
 
@@ -209,7 +210,7 @@ with st.sidebar:
             storage_days = st.number_input("LNG Storage (Days)", 1, 30, 5)
         elif "CNG" in gas_source:
             virtual_pipe_mode = "CNG"
-            storage_days = st.number_input("CNG Storage (Days)", 1, 10, 1) # CNG storage usually smaller
+            storage_days = st.number_input("CNG Storage (Days)", 1, 10, 1) 
             
     elif is_diesel:
         st.markdown("🛢️ **Diesel Logistics**")
@@ -240,7 +241,10 @@ with st.sidebar:
 
     step_load_cap = st.number_input("Unit Step Load Capability (%)", 0.0, 100.0, eng_data['step_load_pct'])
     
-    # --- HERE IS THE FIX: Ensure maint_outage_pct is defined ---
+    # Short Circuit
+    xd_2_pu = st.number_input('Subtransient Reactance (Xd" pu)', 0.05, 0.30, eng_data.get('reactance_xd_2', 0.15), step=0.01)
+
+    st.caption("Availability Parameters (N+M+S)")
     c_r1, c_r2 = st.columns(2)
     maint_outage_pct = c_r1.number_input("Maint. Unavail (%)", 0.0, 20.0, float(eng_data.get('default_maint', 5.0))) / 100.0
     forced_outage_pct = c_r2.number_input("Forced Outage Rate (%)", 0.0, 20.0, float(eng_data.get('default_for', 2.0))) / 100.0
@@ -281,14 +285,31 @@ with st.sidebar:
     if virtual_pipe_mode == "Pipeline":
         st.markdown("⛽ **Pipeline Config**")
         dist_gas_main_m = st.number_input("Distance to Gas Main (m)", 10.0, 20000.0, 1000.0, step=50.0)
-        supply_pressure_bar = st.number_input("Supply Pressure (Bar)", 0.5, 100.0, 4.0, step=0.5)
-        supply_pressure_psi = supply_pressure_bar * 14.5038
+        
+        if is_imperial:
+            supply_pressure_disp = st.number_input(f"Supply Pressure ({u_press})", 5.0, 1000.0, 60.0, step=5.0)
+            supply_pressure_psi = supply_pressure_disp
+            supply_pressure_bar = supply_pressure_psi * 0.0689476
+        else:
+            supply_pressure_disp = st.number_input(f"Supply Pressure ({u_press})", 0.5, 100.0, 4.1, step=0.5)
+            supply_pressure_bar = supply_pressure_disp
+            supply_pressure_psi = supply_pressure_bar * 14.5038
+            
     else:
         dist_gas_main_m = 0; supply_pressure_psi = 0 # Not used
+
+    # ELECTRICAL
+    st.markdown("🔌 **Grid Connection**")
+    grid_connected = st.checkbox("Grid Connected (Parallel)", value=True)
+    if grid_connected:
+        grid_mva_sc = st.number_input("Grid Short Circuit Capacity (MVA)", 50.0, 5000.0, 500.0, step=50.0)
+    else:
+        grid_mva_sc = 0.0
 
     # Noise
     st.markdown("🔊 **Noise**")
     dist_neighbor_m = st.number_input(f"Distance to Neighbor ({u_dist})", 10.0, 5000.0, 100.0)
+    if is_imperial: dist_neighbor_m = dist_neighbor_m / 3.28084
     source_noise_dba = st.number_input("Source Noise @ 1m (dBA)", 60.0, 120.0, 85.0)
     noise_limit = 70.0 
 
@@ -552,4 +573,4 @@ with t4:
 
 # --- FOOTER ---
 st.markdown("---")
-st.caption("CAT Bridge Solutions Designer v12 | Multi-Fuel & Time-to-Market Engine")
+st.caption("CAT Bridge Solutions Designer v12.1 | Multi-Fuel & Time-to-Market Engine")
