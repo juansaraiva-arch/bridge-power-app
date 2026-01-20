@@ -6,10 +6,11 @@ import plotly.express as px
 import plotly.graph_objects as go
 
 # --- PAGE CONFIGURATION ---
-st.set_page_config(page_title="CAT Bridge Solutions Designer v12.1", page_icon="🌉", layout="wide")
+st.set_page_config(page_title="CAT Bridge Solutions Designer v12", page_icon="🌉", layout="wide")
 
 # ==============================================================================
-# 0. HYBRID DATA LIBRARY (MULTI-FUEL & FREQUENCY)
+# 0. HYBRID DATA LIBRARY (RENTAL FLEET: GAS, DIESEL & DUAL FUEL)
+# Fuentes: Hojas Técnicas LEHX + Solar Turbines SMT
 # ==============================================================================
 
 bridge_rental_library = {
@@ -18,20 +19,20 @@ bridge_rental_library = {
         "description": "Gas Rental Unit (G3516H) - High Efficiency",
         "fuels": ["Natural Gas"],
         "type": "High Speed",
-        "iso_rating_mw": {60: 1.9, 50: 1.9}, 
+        "iso_rating_mw": {60: 1.9, 50: 1.9}, # Valid for both freq
         "electrical_efficiency": 0.392,
         "heat_rate_lhv": 8780,
         "step_load_pct": 40.0,
         "emissions_nox": 0.5,
         "default_for": 2.0, "default_maint": 5.0,
-        "est_cost_kw": 850.0,
-        "est_install_kw": 250.0,
+        "est_asset_value_kw": 850.0, # Value for Buyout
+        "est_mob_kw": 80.0,          # Mobilization Cost (Transport + Crane)
         "gas_pressure_min_psi": 1.5,
         "reactance_xd_2": 0.14
     },
     "TM2500": {
         "description": "Mobile Gas Turbine (34 MW) - Aero",
-        "fuels": ["Natural Gas", "Diesel"], 
+        "fuels": ["Natural Gas", "Diesel"], # Dual Fuel
         "type": "Gas Turbine",
         "iso_rating_mw": {60: 34.0, 50: 34.0}, 
         "electrical_efficiency": 0.370,
@@ -39,8 +40,8 @@ bridge_rental_library = {
         "step_load_pct": 20.0,
         "emissions_nox": 0.6,
         "default_for": 1.5, "default_maint": 3.0,
-        "est_cost_kw": 900.0,
-        "est_install_kw": 400.0,
+        "est_asset_value_kw": 900.0,
+        "est_mob_kw": 120.0,         # Higher mob complexity
         "gas_pressure_min_psi": 450.0,
         "reactance_xd_2": 0.17
     },
@@ -54,8 +55,8 @@ bridge_rental_library = {
         "step_load_pct": 20.0,
         "emissions_nox": 0.6,
         "default_for": 1.0, "default_maint": 2.0,
-        "est_cost_kw": 950.0,
-        "est_install_kw": 150.0,
+        "est_asset_value_kw": 950.0,
+        "est_mob_kw": 60.0,          # Fast setup
         "gas_pressure_min_psi": 250.0,
         "reactance_xd_2": 0.18
     },
@@ -69,8 +70,8 @@ bridge_rental_library = {
         "step_load_pct": 20.0,
         "emissions_nox": 0.6,
         "default_for": 1.0, "default_maint": 2.0,
-        "est_cost_kw": 900.0,
-        "est_install_kw": 150.0,
+        "est_asset_value_kw": 900.0,
+        "est_mob_kw": 70.0,
         "gas_pressure_min_psi": 300.0,
         "reactance_xd_2": 0.18
     },
@@ -86,8 +87,8 @@ bridge_rental_library = {
         "step_load_pct": 80.0,
         "emissions_nox": 0.6,
         "default_for": 1.0, "default_maint": 4.0,
-        "est_cost_kw": 600.0,
-        "est_install_kw": 150.0,
+        "est_asset_value_kw": 600.0,
+        "est_mob_kw": 50.0,          # Very easy to deploy
         "gas_pressure_min_psi": 0,
         "reactance_xd_2": 0.13
     },
@@ -101,8 +102,8 @@ bridge_rental_library = {
         "step_load_pct": 75.0,
         "emissions_nox": 4.0,
         "default_for": 1.5, "default_maint": 4.0,
-        "est_cost_kw": 550.0,
-        "est_install_kw": 150.0,
+        "est_asset_value_kw": 550.0,
+        "est_mob_kw": 50.0,
         "gas_pressure_min_psi": 0,
         "reactance_xd_2": 0.14
     }
@@ -134,7 +135,7 @@ else:
     u_press = "Bar"
 
 t = {
-    "title": f"🌉 CAT Bridge Solutions Designer v12.1 ({freq_hz}Hz)",
+    "title": f"🌉 CAT Bridge Solutions Designer v12 ({freq_hz}Hz)",
     "subtitle": "**Time-to-Market Accelerator.**\nEngineering, Logistics & Financial Strategy for Bridge Power.",
     "sb_1": "1. Data Center Profile",
     "sb_2": "2. Technology & Fuel",
@@ -161,11 +162,13 @@ with st.sidebar:
     def_use_bess = True if is_ai else False
     
     p_it = st.number_input("Critical IT Load (MW)", 1.0, 1000.0, 50.0, step=10.0)
+    # PRIME LOGIC: PUE
     pue_input = st.number_input("Design PUE", 1.0, 2.0, 1.35, step=0.01)
     
     avail_req = st.number_input("Availability Target (%)", 90.0, 99.99999, 99.99, format="%.5f")
     step_load_req = st.number_input("Expected Step Load (%)", 0.0, 100.0, def_step_load)
-    dc_aux_pct = st.number_input("DC Building Auxiliaries (%)", 0.0, 20.0, 5.0) / 100.0
+    
+    # PRIME LOGIC: Distribution Losses
     dist_loss_pct = st.number_input("Distribution Losses (%)", 0.0, 10.0, 1.0) / 100.0
 
     st.divider()
@@ -191,12 +194,13 @@ with st.sidebar:
     
     st.info(f"**{eng_data['description']}**")
 
-    # 3. Fuel Type Specific Inputs
+    # 3. Fuel Logic & Properties
     is_gas = fuel_type_sel == "Natural Gas"
     is_diesel = fuel_type_sel == "Diesel"
     is_propane = fuel_type_sel == "Propane"
     
     virtual_pipe_mode = "None"
+    methane_number = 80 # Default
     
     if is_gas:
         st.markdown("🔥 **Gas Properties**")
@@ -222,7 +226,7 @@ with st.sidebar:
         storage_days = st.number_input("LPG Storage (Days)", 1, 30, 5)
         virtual_pipe_mode = "Propane"
 
-    # 4. Tech Specs
+    # 4. Tech Specs (Dynamic Rating)
     def_mw = eng_data['iso_rating_mw'][freq_hz]
     unit_size_iso = st.number_input("Unit Prime Rating (ISO MW)", 0.1, 100.0, def_mw, format="%.3f")
     
@@ -241,7 +245,7 @@ with st.sidebar:
 
     step_load_cap = st.number_input("Unit Step Load Capability (%)", 0.0, 100.0, eng_data['step_load_pct'])
     
-    # Short Circuit
+    # Electrical Params
     xd_2_pu = st.number_input('Subtransient Reactance (Xd" pu)', 0.05, 0.30, eng_data.get('reactance_xd_2', 0.15), step=0.01)
 
     st.caption("Availability Parameters (N+M+S)")
@@ -256,6 +260,7 @@ with st.sidebar:
     # --- 3. SITE ---
     st.header(t["sb_3"])
     
+    # PRIME LOGIC: Advanced Derating
     derate_mode = st.radio("Derate Method", ["Auto-Calculate", "Manual Entry"])
     derate_factor_calc = 1.0
     
@@ -269,19 +274,20 @@ with st.sidebar:
             site_temp_c = st.slider(f"Max Ambient Temp ({u_temp})", 0, 50, 35)
             site_alt_m = st.number_input(f"Altitude ({u_dist})", 0, 4000, 100)
         
+        # Derate Logic
         loss_temp = max(0, (site_temp_c - 25) * 0.01) 
         loss_alt = max(0, (site_alt_m - 100) * 0.0001)
         loss_mn = 0.0
         if is_gas:
-            loss_mn = max(0, (75 - methane_number) * 0.005)
+            loss_mn = max(0, (75 - methane_number) * 0.005) # Penalty for low MN
             
         derate_factor_calc = 1.0 - (loss_temp + loss_alt + loss_mn)
-        st.info(f"Derate: {derate_factor_calc:.3f} (MN Loss: {loss_mn:.1%})")
+        st.info(f"Calc Derate: {derate_factor_calc:.3f} (MN Loss: {loss_mn:.1%})")
     else:
         manual_derate_pct = st.number_input("Manual Derate (%)", 0.0, 50.0, 5.0)
         derate_factor_calc = 1.0 - (manual_derate_pct / 100.0)
 
-    # Pipeline Inputs (Only if Pipeline Selected)
+    # Pipeline Inputs
     if virtual_pipe_mode == "Pipeline":
         st.markdown("⛽ **Pipeline Config**")
         dist_gas_main_m = st.number_input("Distance to Gas Main (m)", 10.0, 20000.0, 1000.0, step=50.0)
@@ -294,11 +300,10 @@ with st.sidebar:
             supply_pressure_disp = st.number_input(f"Supply Pressure ({u_press})", 0.5, 100.0, 4.1, step=0.5)
             supply_pressure_bar = supply_pressure_disp
             supply_pressure_psi = supply_pressure_bar * 14.5038
-            
     else:
-        dist_gas_main_m = 0; supply_pressure_psi = 0 # Not used
+        dist_gas_main_m = 0; supply_pressure_psi = 0 
 
-    # ELECTRICAL
+    # Electrical Grid
     st.markdown("🔌 **Grid Connection**")
     grid_connected = st.checkbox("Grid Connected (Parallel)", value=True)
     if grid_connected:
@@ -325,7 +330,7 @@ with st.sidebar:
     st.header(t["sb_6"])
     st.caption("Rental / PPA Structure")
     
-    # Fuel Price
+    # Dynamic Fuel Price
     if is_gas:
         fuel_price_unit = st.number_input("Gas Price (USD/MMBtu)", 1.0, 20.0, 5.0)
         fuel_price_mmbtu = fuel_price_unit
@@ -334,31 +339,44 @@ with st.sidebar:
         fuel_price_mmbtu = fuel_price_unit / 0.138
     else: # Propane
         fuel_price_unit = st.number_input("Propane Price (USD/Gal)", 1.0, 10.0, 1.50)
-        fuel_price_mmbtu = fuel_price_unit / 0.091 # Approx 91k Btu/Gal
+        fuel_price_mmbtu = fuel_price_unit / 0.091 
 
     # Virtual Pipeline Premium
     if virtual_pipe_mode in ["LNG", "CNG"]:
-        vp_premium = st.number_input("Virtual Pipe Premium ($/MMBtu)", 0.0, 15.0, 4.0, help="Logistics cost adder")
+        vp_premium = st.number_input("Virtual Pipe Premium ($/MMBtu)", 0.0, 15.0, 4.0, help="Logistics cost")
         fuel_price_mmbtu += vp_premium
 
-    gen_install_cost = st.number_input("Mobilization/Install (USD/kW)", 10.0, 1000.0, eng_data['est_install_kw'])
+    gen_mob_cost = st.number_input("Mobilization/Install (USD/kW)", 10.0, 1000.0, eng_data['est_mob_kw'])
     cap_charge = st.number_input("Capacity Charge (USD/MW-mo)", 5000.0, 100000.0, 28000.0, step=1000.0)
     var_om = st.number_input("Variable O&M (USD/MWh)", 0.0, 100.0, 21.50) 
     grid_rate_kwh = st.number_input("Utility Grid Rate (USD/kWh)", 0.01, 0.50, 0.12, format="%.3f") 
     
     st.markdown("⏱️ **Time-to-Market Analysis**")
-    revenue_per_mw_mo = st.number_input("Revenue Loss (USD/MW/mo)", 10000.0, 1000000.0, 150000.0, step=10000.0, help="Revenue lost per month of delay (IT Value)")
+    revenue_per_mw_mo = st.number_input("Revenue Loss (USD/MW/mo)", 10000.0, 1000000.0, 150000.0, step=10000.0, help="Revenue lost per month of delay")
     months_saved = st.number_input("Months Saved vs Utility", 1, 60, 18, help="Time bridge power is active before utility arrives")
+    
+    # Buyout Option
+    st.caption("Buyout Option (Year 5)")
+    buyout_pct = st.number_input("Buyout Residual Value (%)", 0.0, 100.0, 20.0)
+    ref_new_capex = eng_data['est_asset_value_kw']
 
 # ==============================================================================
 # 2. CALCULATION ENGINE
 # ==============================================================================
 
-# A. LOAD & POWER (USING PUE)
-p_total_site_load = p_it * pue_input
+# A. LOAD & POWER (PRIME LOGIC WITH PUE)
+p_total_site_load = p_it * pue_input # PUE Based
 p_dist_loss = p_total_site_load * dist_loss_pct
 p_net_gen_req = p_total_site_load + p_dist_loss
 p_gross_req = p_net_gen_req / (1 - gen_parasitic_pct)
+
+# Voltage Logic
+if is_50hz:
+    rec_voltage_str = "11 kV" if p_gross_req < 20 else ("33 kV" if p_gross_req > 50 else "11 kV / 33 kV")
+    op_voltage_kv = 11.0 if p_gross_req < 35 else 33.0
+else:
+    rec_voltage_str = "13.8 kV" if p_gross_req < 25 else ("34.5 kV" if p_gross_req > 60 else "13.8 kV / 34.5 kV")
+    op_voltage_kv = 13.8 if p_gross_req < 45 else 34.5
 
 # B. FLEET SIZING
 unit_site_cap = unit_size_iso * derate_factor_calc
@@ -395,50 +413,41 @@ total_mmbtu_day = (p_gross_req * 24 * hr_net_lhv_btu) / 1e6
 
 logistics_info = []
 storage_area_m2 = 0
-capex_fuel_infra = 0
 
 if virtual_pipe_mode == "LNG":
-    # LNG: 1 MMBtu ~ 12.5 Gallons (approx)
-    total_gal_day = total_mmbtu_day * 12.5
+    total_gal_day = total_mmbtu_day * 12.5 # ~12.5 Gal/MMBtu
     req_storage_gal = total_gal_day * storage_days
-    # ISO Tanks (10,000 Gal effective)
     num_iso_tanks = math.ceil(req_storage_gal / 10000)
     trucks_day = math.ceil(total_gal_day / 10000)
     logistics_info = [f"Daily: {total_gal_day:,.0f} Gal", f"Storage: {num_iso_tanks}x ISO Tanks", f"Traffic: {trucks_day} Trucks/Day"]
-    storage_area_m2 = num_iso_tanks * 40 # 40m2 per tank + clearances
+    storage_area_m2 = num_iso_tanks * 40 
     
 elif virtual_pipe_mode == "CNG":
-    # CNG: 1 MMBtu ~ 1000 scf. 
-    total_scf_day = total_mmbtu_day * 1000
+    total_scf_day = total_mmbtu_day * 1000 # ~1000 scf/MMBtu
     req_storage_scf = total_scf_day * storage_days
-    # Titan Module (Hexagon) ~ 350,000 scf effective
     num_tube_trailers = math.ceil(req_storage_scf / 350000)
     trucks_day = math.ceil(total_scf_day / 350000)
     logistics_info = [f"Daily: {total_scf_day/1e6:,.2f} MMscf", f"Storage: {num_tube_trailers}x Tube Trailers", f"Traffic: {trucks_day} Trucks/Day"]
     if trucks_day > 20: logistics_info.append("⚠️ HIGH TRAFFIC ALERT")
-    storage_area_m2 = num_tube_trailers * 60 # Larger footprint
+    storage_area_m2 = num_tube_trailers * 60 
     
 elif virtual_pipe_mode == "Diesel":
-    # Diesel: 1 MMBtu ~ 7.3 Gallons
-    total_gal_day = total_mmbtu_day * 7.3
+    total_gal_day = total_mmbtu_day * 7.3 # ~7.3 Gal/MMBtu
     req_storage_gal = total_gal_day * storage_days
-    # Frac Tanks (20,000 Gal)
     num_frac_tanks = math.ceil(req_storage_gal / 20000)
     trucks_day = math.ceil(total_gal_day / 8000)
     logistics_info = [f"Daily: {total_gal_day:,.0f} Gal", f"Storage: {num_frac_tanks}x Frac Tanks", f"Traffic: {trucks_day} Trucks/Day"]
     storage_area_m2 = num_frac_tanks * 50
 
 elif virtual_pipe_mode == "Propane":
-    # Propane: 1 MMBtu ~ 11 Gallons
-    total_gal_day = total_mmbtu_day * 11.0
+    total_gal_day = total_mmbtu_day * 11.0 # ~11 Gal/MMBtu
     req_storage_gal = total_gal_day * storage_days
-    # LPG Bullets (30,000 Gal)
     num_lpg_tanks = math.ceil(req_storage_gal / 30000)
     trucks_day = math.ceil(total_gal_day / 9000)
     logistics_info = [f"Daily: {total_gal_day:,.0f} Gal", f"Storage: {num_lpg_tanks}x LPG Bullets", f"Traffic: {trucks_day} Trucks/Day"]
     storage_area_m2 = num_lpg_tanks * 80
 
-# Pipeline Calculation (Gas Only)
+# Pipeline Calculation
 rec_pipe_dia = 0
 if virtual_pipe_mode == "Pipeline":
     peak_scfh = (total_mmbtu_day / 24) * 1000
@@ -447,7 +456,19 @@ if virtual_pipe_mode == "Pipeline":
     target_dia_in = math.sqrt(target_area_ft2 * 4 / math.pi) * 12
     rec_pipe_dia = max(4, math.ceil(target_dia_in))
 
-# E. FINANCIALS (TIME TO MARKET)
+# D. SHORT CIRCUIT (PRIME LOGIC)
+gen_mva_total = installed_cap_site / 0.8
+gen_sc_mva = gen_mva_total / xd_2_pu
+total_sc_mva = gen_sc_mva + grid_mva_sc
+isc_ka = total_sc_mva / (math.sqrt(3) * op_voltage_kv)
+standard_breakers = [25, 31.5, 40, 50, 63]
+rec_breaker = 63
+for b in standard_breakers:
+    if b > (isc_ka * 1.1): 
+        rec_breaker = b
+        break
+
+# E. FINANCIALS & TIME TO MARKET
 # 1. LCOE Bridge
 gen_mwh_yr = p_gross_req * 8760
 fuel_cost_mwh = (hr_net_lhv_btu / 1e6) * fuel_price_mmbtu
@@ -464,9 +485,14 @@ bridge_premium_mwh = lcoe_bridge - lcoe_utility
 total_energy_during_bridge = p_gross_req * 730 * months_saved # MWh approx
 cost_of_bridge_premium = (bridge_premium_mwh * total_energy_during_bridge) / 1e6 # In Millions
 # Mobilization & Setup
-capex_setup_m = (installed_cap_site * 1000 * gen_install_cost) / 1e6
+capex_setup_m = (installed_cap_site * 1000 * gen_mob_cost) / 1e6
 
 net_benefit_m = (gross_revenue_gain / 1e6) - cost_of_bridge_premium - capex_setup_m
+
+# 3. Buyout
+total_asset_value_m = (installed_cap_site * 1000 * ref_new_capex) / 1e6
+buyout_price_m = total_asset_value_m * (buyout_pct / 100.0)
+savings_vs_new = total_asset_value_m - buyout_price_m
 
 # F. FOOTPRINT
 area_gen = n_total * 150 
@@ -520,6 +546,10 @@ with t2:
         st.success(f"Grid Parallel: Yes ({grid_mva_sc} MVA Isc)")
     else:
         st.warning("Island Mode (Off-Grid)")
+    
+    c_el1, c_el2 = st.columns(2)
+    c_el1.metric("Total Short Circuit", f"{isc_ka:.1f} kA", f"Rec: {rec_breaker} kA")
+    c_el2.metric("Op. Voltage", f"{op_voltage_kv} kV", rec_voltage_str)
 
 with t3:
     c_e1, c_e2 = st.columns(2)
@@ -570,7 +600,14 @@ with t4:
         })
         fig_lcoe = px.bar(lcoe_data, x="Type", y="$/MWh", color="Cost Component", title="LCOE Composition", text_auto='.1f')
         st.plotly_chart(fig_lcoe, use_container_width=True)
+        
+    # 3. Buyout
+    st.divider()
+    st.subheader("3. Asset Transition (Buyout)")
+    c_b1, c_b2 = st.columns(2)
+    c_b1.metric("Est. Buyout Price", f"${buyout_price_m:.1f} M", f"{buyout_pct}% Residual")
+    c_b2.metric("New Asset Value", f"${total_asset_value_m:.1f} M")
 
 # --- FOOTER ---
 st.markdown("---")
-st.caption("CAT Bridge Solutions Designer v12.1 | Multi-Fuel & Time-to-Market Engine")
+st.caption("CAT Bridge Solutions Designer v12 | Multi-Fuel & Time-to-Market Engine")
