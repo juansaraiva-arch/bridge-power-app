@@ -6,7 +6,7 @@ import plotly.express as px
 import plotly.graph_objects as go
 
 # --- PAGE CONFIGURATION ---
-st.set_page_config(page_title="CAT Bridge Solutions Designer v37", page_icon="🌉", layout="wide")
+st.set_page_config(page_title="CAT Bridge Solutions Designer v39", page_icon="🌉", layout="wide")
 
 # ==============================================================================
 # 0. HYBRID DATA LIBRARY
@@ -125,6 +125,7 @@ with st.sidebar:
     dc_type_sel = st.selectbox("Data Center Type", ["AI Factory (Training)", "Hyperscale Standard"])
     is_ai = "AI" in dc_type_sel
     
+    # Defaults
     def_step_load = 50.0 if is_ai else 25.0
     def_use_bess = True if is_ai else False
     
@@ -220,6 +221,14 @@ with st.sidebar:
     manual_derate_pct = st.number_input("Site Derating (%)", 0.0, 50.0, 5.0)
     derate_factor_calc = 1.0 - (manual_derate_pct / 100.0)
     
+    # --- GRID CONNECTION INPUTS RESTORED ---
+    st.markdown("🔌 **Grid Connection**")
+    grid_connected = st.checkbox("Grid Connected (Parallel Mode)", value=True)
+    if grid_connected:
+        grid_mva_sc = st.number_input("Grid Short Circuit Capacity (MVA)", 50.0, 5000.0, 500.0, step=50.0)
+    else:
+        grid_mva_sc = 0.0
+    
     st.divider()
 
     st.header("4. Strategy")
@@ -246,12 +255,11 @@ with st.sidebar:
     revenue_per_mw_mo = st.number_input("Revenue Loss (USD/MW/mo)", 10000.0, 1000000.0, 150000.0)
     months_saved = st.number_input("Months Saved", 1, 60, 18)
 
-    # Buyout Params (For Tab 4)
-    st.caption("Post-Grid Strategy Options")
-    buyout_pct = st.number_input("Buyout Residual Value (%)", 0.0, 100.0, 20.0)
+    # Buyout Params
+    buyout_pct = 20.0
     ref_new_capex = eng_data['est_asset_value_kw']
-    vpp_arb_spread = st.number_input("VPP Arbitrage ($/MWh)", 0.0, 200.0, 40.0)
-    vpp_cap_pay = st.number_input("VPP Capacity ($/MW-yr)", 0.0, 100000.0, 28000.0)
+    vpp_arb_spread = 40.0
+    vpp_cap_pay = 28000.0
 
 # ==============================================================================
 # 2. CALCULATION ENGINE (PRIME ALGORITHM v3 - AGGRESSIVE)
@@ -308,14 +316,40 @@ else:
             
     bess_power = 0; bess_energy = 0
 
-# --- FLEET STRATEGY RESTORED ---
+# --- FIX: PROBABILISTIC RELIABILITY CALCULATION (PRIME LOGIC) ---
+# N_running is determined by physics/load.
+# N_maintenance is a fixed block.
+# N_reserve (S) is calculated using Binomial Cumulative Distribution to meet Target.
+
 n_maint = math.ceil(n_running * maint_outage_pct) 
-n_forced_buffer = math.ceil(n_running * forced_outage_pct) 
-n_reserve = max(n_forced_buffer, 1) # Standard logic for Tier 1-2
-if avail_req > 99.99: n_reserve = max(n_reserve, 2) # Tier 4 check
+
+# Reliability Loop
+prob_unit_avail = 1.0 - forced_outage_pct
+target_reliability = avail_req / 100.0
+n_reserve = 0
+
+while True:
+    # Total Active Pool (Running + Reserve)
+    n_pool = n_running + n_reserve
+    
+    # Calculate Probability(k >= n_running) in n_pool
+    # Cumulative Binomial Distribution
+    prob_success = 0.0
+    for k in range(n_running, n_pool + 1):
+        # nCr * p^k * q^(n-k)
+        comb = math.comb(n_pool, k)
+        prob = comb * (prob_unit_avail ** k) * ((1 - prob_unit_avail) ** (n_pool - k))
+        prob_success += prob
+        
+    if prob_success >= target_reliability:
+        break
+        
+    n_reserve += 1
+    if n_reserve > 20: break # Safety breaker
 
 n_total = n_running + n_maint + n_reserve
 installed_cap_site = n_total * unit_site_cap
+calc_reliability_pct = prob_success * 100.0
 
 # --- C. THERMODYNAMICS & EFFICIENCY (AGGRESSIVE CURVE) ---
 total_parasitics_mw = n_running * (unit_size_iso * gen_parasitic_pct)
@@ -327,7 +361,6 @@ base_eff = eng_data['electrical_efficiency']
 type_tech = bridge_rental_library[selected_model].get('type', 'High Speed')
 
 if type_tech == "High Speed": 
-    # Recip Engine Curve (Aggressive drop below 60%)
     if real_load_factor >= 0.75: 
         eff_factor = 1.0
     elif real_load_factor >= 0.50:
@@ -335,7 +368,6 @@ if type_tech == "High Speed":
     else:
         eff_factor = 0.65 + (1.0 * (real_load_factor - 0.30))
 else: 
-    # Turbine: Linear but steep drop
     eff_factor = 1.0 - (0.8 * (1.0 - real_load_factor))
 
 eff_factor = max(eff_factor, 0.50) # Floor
@@ -344,7 +376,6 @@ gross_eff_site = base_eff * eff_factor
 gross_hr_lhv = 3412.14 / gross_eff_site
 
 # NET HR = Total Fuel Input / USEFUL Load (IT + Cooling)
-# Penalizes both Engine Efficiency (Numerator goes up) AND Parasitics/Losses (Denominator is fixed)
 total_fuel_input_mmbtu = p_gross_total * (gross_hr_lhv / 1e6) 
 net_hr_lhv = (total_fuel_input_mmbtu * 1e6) / p_total_site_load
 
@@ -378,8 +409,7 @@ elif virtual_pipe_mode in ["Diesel", "Propane"]:
     storage_area_m2 = num_tanks * tank_area_unit
 
 # --- E. ELECTRICAL SIZING (RESTORED) ---
-grid_connected = True 
-grid_mva_sc = 500.0 if grid_connected else 0.0 
+# Uses user input for grid_mva_sc
 xd_pu = eng_data.get('reactance_xd_2', 0.15)
 gen_mva_total = installed_cap_site / 0.8
 gen_sc_mva = gen_mva_total / xd_pu
@@ -464,7 +494,7 @@ with t1:
         st.write(f"**N (Running):** {n_running}")
         st.write(f"**M (Maintenance):** {n_maint}")
         st.write(f"**S (Standby):** {n_reserve}")
-        st.metric("Total Fleet", f"{n_total} Units", f"{installed_cap_site:.1f} MW Total")
+        st.metric("Total Fleet", f"{n_total} Units", f"Reliability: {calc_reliability_pct:.4f}%")
         
         if use_bess:
             st.info(f"⚡ **BESS:** {bess_power:.1f} MW / {bess_energy:.1f} MWh")
@@ -472,7 +502,7 @@ with t1:
     with col3:
         st.subheader("⚡ Electrical Sizing")
         st.write(f"**Voltage:** {op_voltage_kv} kV")
-        st.write(f"**Gen Contribution:** {gen_sc_mva:.1f} MVA")
+        st.write(f"**Grid Contribution:** {grid_mva_sc:.1f} MVA")
         st.metric("Total Short Circuit", f"{isc_ka:.1f} kA")
         st.success(f"✅ Breaker: **{rec_breaker} kA**")
         
@@ -545,4 +575,4 @@ with t4:
 
 # --- FOOTER ---
 st.markdown("---")
-st.caption("CAT Bridge Solutions Designer v37 | Full Engineering Suite")
+st.caption("CAT Bridge Solutions Designer v39 | Probabilistic Prime Algorithm")
