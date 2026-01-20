@@ -6,7 +6,7 @@ import plotly.express as px
 import plotly.graph_objects as go
 
 # --- PAGE CONFIGURATION ---
-st.set_page_config(page_title="CAT Bridge Solutions Designer v16", page_icon="🌉", layout="wide")
+st.set_page_config(page_title="CAT Bridge Solutions Designer v16.1", page_icon="🌉", layout="wide")
 
 # ==============================================================================
 # 0. HYBRID DATA LIBRARY (RENTAL FLEET: GAS, DIESEL & DUAL FUEL)
@@ -157,7 +157,7 @@ else:
     u_press = "Bar"
 
 t = {
-    "title": f"🌉 CAT Bridge Solutions Designer v16 ({freq_hz}Hz)",
+    "title": f"🌉 CAT Bridge Solutions Designer v16.1 ({freq_hz}Hz)",
     "subtitle": "**Time-to-Market Accelerator.**\nEngineering, Logistics & Financial Strategy for Bridge Power.",
     "sb_1": "1. Data Center Profile",
     "sb_2": "2. Technology & Fuel",
@@ -280,6 +280,7 @@ with st.sidebar:
     # --- 3. SITE ---
     st.header(t["sb_3"])
     
+    # PRIME LOGIC: Advanced Derating
     derate_mode = st.radio("Derate Method", ["Auto-Calculate", "Manual Entry"])
     derate_factor_calc = 1.0
     
@@ -539,7 +540,9 @@ if force_oxicat:
 # F. FINANCIALS & TIME TO MARKET
 # 1. LCOE Bridge
 gen_mwh_yr = p_gross_req * 8760
-fuel_cost_mwh = (hr_net_lhv_btu / 1e6) * fuel_price_mmbtu
+# FIX: Multiply by 1000 to convert $/kWh to $/MWh
+fuel_cost_mwh = (hr_net_lhv_btu / 1e6) * fuel_price_mmbtu * 1000
+
 rental_cost_yr = installed_cap_site * cap_charge * 12
 rental_cost_mwh = rental_cost_yr / gen_mwh_yr
 lcoe_bridge = fuel_cost_mwh + rental_cost_mwh + var_om
@@ -686,7 +689,12 @@ with t3:
         x = ["Gross Revenue Gained", "Bridge Energy Premium", "Setup & Mob Cost", "NET BENEFIT"],
         textposition = "outside",
         text = [f"+{gross_revenue_gain/1e6:.1f}M", f"-{cost_of_bridge_premium:.1f}M", f"-{capex_setup_m:.1f}M", f"${net_benefit_m:.1f}M"],
-        y = [gross_revenue_gain/1e6, -cost_of_bridge_premium, -capex_setup_m, net_benefit_m], # FIXED HERE
+        y = [
+            gross_revenue_gain/1e6, 
+            -cost_of_bridge_premium, # FIXED: Negative value for cost
+            -capex_setup_m,          # FIXED: Negative value for cost
+            net_benefit_m
+        ], 
         connector = {"line":{"color":"rgb(63, 63, 63)"}},
     ))
     fig_water.update_layout(title = f"Value Created by Deploying {months_saved} Months Early", showlegend = False)
@@ -721,4 +729,4 @@ with t4:
 
 # --- FOOTER ---
 st.markdown("---")
-st.caption("CAT Bridge Solutions Designer v16 | Powered by Prime Engineering Engine")
+st.caption("CAT Bridge Solutions Designer v16.1 | Powered by Prime Engineering Engine")
