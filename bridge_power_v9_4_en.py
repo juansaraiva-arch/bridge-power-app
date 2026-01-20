@@ -6,7 +6,7 @@ import plotly.express as px
 import plotly.graph_objects as go
 
 # --- PAGE CONFIGURATION ---
-st.set_page_config(page_title="CAT Bridge Solutions Designer v13.1", page_icon="🌉", layout="wide")
+st.set_page_config(page_title="CAT Bridge Solutions Designer v15", page_icon="🌉", layout="wide")
 
 # ==============================================================================
 # 0. HYBRID DATA LIBRARY (RENTAL FLEET: GAS, DIESEL & DUAL FUEL)
@@ -139,17 +139,16 @@ else:
     u_energy, u_therm, u_water = "MWh", "GJ", "m³/day"
     u_press = "Bar"
 
-# --- FIXED DICTIONARY WITH ALL SECTIONS ---
 t = {
-    "title": f"🌉 CAT Bridge Solutions Designer v13.1 ({freq_hz}Hz)",
+    "title": f"🌉 CAT Bridge Solutions Designer v15 ({freq_hz}Hz)",
     "subtitle": "**Time-to-Market Accelerator.**\nEngineering, Logistics & Financial Strategy for Bridge Power.",
     "sb_1": "1. Data Center Profile",
     "sb_2": "2. Technology & Fuel",
     "sb_3": "3. Site, Logistics & Noise",
     "sb_4": "4. Strategy (BESS & LNG)",
-    "sb_5": "5. Cooling (Not Used)", # Placeholder or removed
-    "sb_6": "6. Regulatory & Emissions", # Added this
-    "sb_7": "7. Financials & Strategy"   # Added this
+    "sb_5": "5. Cooling & Env",
+    "sb_6": "6. Regulatory & Emissions",
+    "sb_7": "7. Financials & Strategy"
 }
 
 st.title(t["title"])
@@ -407,32 +406,42 @@ else:
     rec_voltage_str = "13.8 kV" if p_gross_req < 25 else ("34.5 kV" if p_gross_req > 60 else "13.8 kV / 34.5 kV")
     op_voltage_kv = 13.8 if p_gross_req < 45 else 34.5
 
-# B. FLEET SIZING
+# B. FLEET SIZING (N+M+S LOGIC from PRIME)
 unit_site_cap = unit_size_iso * derate_factor_calc
 
 if use_bess:
     target_load_factor = 0.95 
-    n_base = math.ceil(p_gross_req / (unit_site_cap * target_load_factor))
+    n_running = math.ceil(p_gross_req / (unit_site_cap * target_load_factor))
     step_mw_req = p_it * (step_load_req / 100.0)
     bess_power = max(step_mw_req, unit_site_cap) 
     bess_energy = bess_power * 2 
-    n_spin = 1 
 else:
-    n_base = math.ceil(p_gross_req / unit_site_cap)
+    target_load_factor = 0.85
     step_mw_req = p_it * (step_load_req / 100.0)
-    n_calc = n_base
+    n_calc = math.ceil(p_gross_req / unit_site_cap)
     while True:
-        total_mw = n_calc * unit_site_cap
-        total_step_cap = total_mw * (step_load_cap / 100.0)
-        if total_step_cap >= step_mw_req and (total_mw >= p_gross_req):
+        headroom_mw = (n_calc * unit_site_cap) * (step_load_cap/100.0)
+        load_cap = n_calc * unit_site_cap
+        if headroom_mw >= step_mw_req and load_cap >= p_gross_req:
             break
         n_calc += 1
-    n_spin = max(n_calc - n_base, 1)
-    bess_power = 0; bess_energy = 0
+    n_running = n_calc
+    bess_power = 0
+    bess_energy = 0
 
-n_maint = math.ceil((n_base + n_spin) * maint_outage_pct)
-n_online = n_base + n_spin
-n_total = n_online + n_maint
+# Maintenance Units
+n_maint = math.ceil(n_running * maint_outage_pct)
+
+# Standby/Reserve Logic (Prime Style)
+if avail_req < 99.0: n_red_tier = 1 
+elif avail_req < 99.9: n_red_tier = 1 
+elif avail_req < 99.99: n_red_tier = 2 
+else: n_red_tier = 3 
+
+n_forced_buffer = math.ceil(n_running * forced_outage_pct)
+n_reserve = max(n_forced_buffer, n_red_tier)
+
+n_total = n_running + n_maint + n_reserve
 installed_cap_site = n_total * unit_site_cap
 
 # C. FUEL & LOGISTICS (VIRTUAL PIPELINE LOGIC)
@@ -499,7 +508,7 @@ for b in standard_breakers:
 
 # E. EMISSIONS (PRIME LOGIC)
 attenuation = 20 * math.log10(dist_neighbor_m)
-noise_rec = source_noise_dba + (10 * math.log10(n_online)) - attenuation
+noise_rec = source_noise_dba + (10 * math.log10(n_running)) - attenuation
 total_bhp = p_gross_req * 1341
 nox_tpy = (eng_data['emissions_nox'] * total_bhp * 8760) / 907185
 req_scr = nox_tpy > limit_nox_tpy
@@ -539,12 +548,14 @@ rev_arb = installed_cap_site * vpp_arb_spread * 365
 rev_cap = installed_cap_site * vpp_cap_pay
 total_vpp_yr_m = (rev_arb + rev_cap) / 1e6
 
-# G. FOOTPRINT (Consolidated)
-area_gen = n_total * 150 
-area_bess = bess_power * 30 
-# Add Urea Area if SCR required
-area_urea = (math.ceil((urea_vol_yr/365)*7/30000) * 50) if req_scr else 0
-total_area_m2 = (area_gen + storage_area_m2 + area_bess + area_urea + 2500) * 1.2 
+# G. FOOTPRINT BREAKDOWN
+area_gen_total = n_total * 150 
+area_bess_total = bess_power * 30 
+area_urea_total = (math.ceil((urea_vol_yr/365)*7/30000) * 50) if req_scr else 0
+area_sub_total = 2500 # MV Yard
+# storage_area_m2 comes from Fuel Logic
+
+total_area_m2 = (area_gen_total + storage_area_m2 + area_bess_total + area_urea_total + area_sub_total) * 1.2 
 
 # ==============================================================================
 # 3. DASHBOARD
@@ -559,7 +570,7 @@ else:
 
 c1, c2, c3, c4 = st.columns(4)
 c1.metric("Bridge Capacity", f"{p_net_gen_req:.1f} MW", f"IT Load: {p_it:.1f} MW")
-c2.metric("Fleet Configuration", f"{n_total} Units", f"Model: {selected_model}")
+c2.metric("Fleet Configuration", f"{n_total} Units", f"N+M+S: {n_running}+{n_maint}+{n_reserve}")
 c3.metric("LCOE (Bridge)", f"${lcoe_bridge:.2f}/MWh", f"Grid: ${lcoe_utility:.2f}")
 c4.metric("Net Benefit (TtM)", f"${net_benefit_m:.1f} M", f"{months_saved} Months Saved")
 
@@ -577,13 +588,29 @@ with t1:
         })
         st.dataframe(df_bal.style.format({"MW": "{:.2f}"}), use_container_width=True)
         
-    with col2:
         st.subheader("Electrical Sizing")
         st.write(f"**Operating Voltage:** {op_voltage_kv} kV")
         st.write(f"**Grid Contribution:** {grid_mva_sc} MVA")
         st.write(f"**Gen Contribution:** {gen_sc_mva:.1f} MVA (Xd\" {xd_2_pu})")
         st.markdown(f"**Total Short Circuit:** :red[**{isc_ka:.1f} kA**]")
         st.success(f"✅ Recommended Switchgear Rating: **{rec_breaker} kA**")
+        
+    with col2:
+        st.subheader("Fleet Strategy (N+M+S)")
+        st.write(f"**Target Avail:** {avail_req}% | **Model:** {selected_model}")
+        st.write(f"**Site Capacity (Derated):** {unit_site_cap:.2f} MW")
+        st.markdown("---")
+        st.write(f"**N (Running):** {n_running}")
+        st.write(f"**M (Maintenance @ {maint_outage_pct*100:.1f}%):** {n_maint}")
+        st.write(f"**S (Standby/Reserve):** {n_reserve}")
+        st.caption(f"Reserve logic: Max of FOR Buffer ({n_forced_buffer}) or Tier Requirement ({n_red_tier})")
+        st.metric("Total Installed Fleet", f"{n_total} Units", f"{installed_cap_site:.1f} MW Total")
+
+        if use_bess:
+            st.divider()
+            st.subheader("BESS Sizing")
+            st.info(f"⚡ **System:** {bess_power:.1f} MW / {bess_energy:.1f} MWh")
+            st.caption("Duration: 2 Hours (Standard Bridge Spec)")
 
 with t2:
     c_e1, c_e2 = st.columns(2)
@@ -597,8 +624,22 @@ with t2:
             st.metric("Est. Storage Area", f"{storage_area_m2:.0f} m²")
             
         st.divider()
-        st.subheader("Footprint")
-        st.metric("Total Land Required", f"{d_area_l:.2f} {u_al}")
+        st.subheader("Footprint Estimate")
+        
+        # Breakdown Table
+        df_foot = pd.DataFrame({
+            "Zone": ["Generation Hall", "Fuel Logistics", "BESS", "Emissions/Urea", "Substation", "Total (+Roads)"],
+            f"Area ({u_as})": [
+                area_gen_total * (10.764 if is_imperial else 1),
+                storage_area_m2 * (10.764 if is_imperial else 1),
+                area_bess_total * (10.764 if is_imperial else 1),
+                area_urea_total * (10.764 if is_imperial else 1),
+                area_sub_total * (10.764 if is_imperial else 1),
+                d_area_s
+            ]
+        })
+        st.dataframe(df_foot.style.format({f"Area ({u_as})": "{:,.0f}"}), use_container_width=True)
+        st.metric("TOTAL LAND REQUIRED", f"{d_area_l:.2f} {u_al}")
         
         
     with c_e2:
@@ -665,4 +706,4 @@ with t4:
 
 # --- FOOTER ---
 st.markdown("---")
-st.caption("CAT Bridge Solutions Designer v13.1 | Powered by Prime Engineering Engine")
+st.caption("CAT Bridge Solutions Designer v15 | Powered by Prime Engineering Engine")
