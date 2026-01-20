@@ -6,15 +6,13 @@ import plotly.express as px
 import plotly.graph_objects as go
 
 # --- PAGE CONFIGURATION ---
-st.set_page_config(page_title="CAT Bridge Solutions Designer v16.1", page_icon="🌉", layout="wide")
+st.set_page_config(page_title="CAT Bridge Solutions Designer v19", page_icon="🌉", layout="wide")
 
 # ==============================================================================
-# 0. HYBRID DATA LIBRARY (RENTAL FLEET: GAS, DIESEL & DUAL FUEL)
-# Fuentes: Datasheets LEHX (Cat) & SMT (Solar Turbines)
+# 0. HYBRID DATA LIBRARY (RENTAL FLEET)
 # ==============================================================================
 
 bridge_rental_library = {
-    # --- GAS / DUAL FUEL UNITS ---
     "XGC1900": {
         "description": "Gas Rental Unit (G3516H) - High Efficiency",
         "fuels": ["Natural Gas"],
@@ -79,8 +77,6 @@ bridge_rental_library = {
         "gas_pressure_min_psi": 300.0,
         "reactance_xd_2": 0.18
     },
-
-    # --- DIESEL ONLY UNITS ---
     "XQ2280": {
         "description": "Diesel Power Module (3516C) - Tier 4 Final",
         "fuels": ["Diesel"],
@@ -157,7 +153,7 @@ else:
     u_press = "Bar"
 
 t = {
-    "title": f"🌉 CAT Bridge Solutions Designer v16.1 ({freq_hz}Hz)",
+    "title": f"🌉 CAT Bridge Solutions Designer v19 ({freq_hz}Hz)",
     "subtitle": "**Time-to-Market Accelerator.**\nEngineering, Logistics & Financial Strategy for Bridge Power.",
     "sb_1": "1. Data Center Profile",
     "sb_2": "2. Technology & Fuel",
@@ -221,6 +217,9 @@ with st.sidebar:
     
     virtual_pipe_mode = "None"
     methane_number = 80 # Default
+    storage_days = 0
+    tank_unit_cap = 0
+    tank_mob_cost = 0
     
     if is_gas:
         st.markdown("🔥 **Gas Properties**")
@@ -232,21 +231,34 @@ with st.sidebar:
         elif "LNG" in gas_source:
             virtual_pipe_mode = "LNG"
             storage_days = st.number_input("LNG Storage (Days)", 1, 30, 5)
+            st.caption("Storage Asset Specs")
+            tank_unit_cap = st.number_input("ISO Tank Capacity (Gal)", 1000, 50000, 10000)
+            tank_mob_cost = st.number_input("Mob Cost per Tank ($)", 0, 50000, 5000)
+            
         elif "CNG" in gas_source:
             virtual_pipe_mode = "CNG"
             storage_days = st.number_input("CNG Storage (Days)", 1, 10, 1) 
+            st.caption("Storage Asset Specs")
+            tank_unit_cap = st.number_input("Tube Trailer Cap (scf)", 50000, 1000000, 350000)
+            tank_mob_cost = st.number_input("Mob Cost per Trailer ($)", 0, 50000, 2000)
             
     elif is_diesel:
         st.markdown("🛢️ **Diesel Logistics**")
         storage_days = st.number_input("Diesel Storage (Days)", 1, 30, 3)
         virtual_pipe_mode = "Diesel"
+        st.caption("Storage Asset Specs")
+        tank_unit_cap = st.number_input("Frac Tank Capacity (Gal)", 1000, 50000, 20000)
+        tank_mob_cost = st.number_input("Mob Cost per Tank ($)", 0, 50000, 2500)
         
     elif is_propane:
         st.markdown("⚪ **Propane Logistics**")
         storage_days = st.number_input("LPG Storage (Days)", 1, 30, 5)
         virtual_pipe_mode = "Propane"
+        st.caption("Storage Asset Specs")
+        tank_unit_cap = st.number_input("LPG Bullet Capacity (Gal)", 1000, 100000, 30000)
+        tank_mob_cost = st.number_input("Mob Cost per Tank ($)", 0, 50000, 5000)
 
-    # 4. Tech Specs (Dynamic Rating)
+    # 4. Tech Specs
     def_mw = eng_data['iso_rating_mw'][freq_hz]
     unit_size_iso = st.number_input("Unit Prime Rating (ISO MW)", 0.1, 100.0, def_mw, format="%.3f")
     
@@ -280,7 +292,6 @@ with st.sidebar:
     # --- 3. SITE ---
     st.header(t["sb_3"])
     
-    # PRIME LOGIC: Advanced Derating
     derate_mode = st.radio("Derate Method", ["Auto-Calculate", "Manual Entry"])
     derate_factor_calc = 1.0
     
@@ -468,39 +479,61 @@ total_mmbtu_day = (p_gross_req * 24 * hr_net_lhv_btu) / 1e6
 
 logistics_info = []
 storage_area_m2 = 0
+fuel_storage_capex = 0
+tank_description = ""
+num_tanks_total = 0
 
 if virtual_pipe_mode == "LNG":
-    total_gal_day = total_mmbtu_day * 12.5 # ~12.5 Gal/MMBtu
+    # 1 ISO Tank ~ 10,000 Gallons usable
+    total_gal_day = total_mmbtu_day * 12.5 
     req_storage_gal = total_gal_day * storage_days
-    num_iso_tanks = math.ceil(req_storage_gal / 10000)
-    trucks_day = math.ceil(total_gal_day / 10000)
-    logistics_info = [f"Daily: {total_gal_day:,.0f} Gal", f"Storage: {num_iso_tanks}x ISO Tanks", f"Traffic: {trucks_day} Trucks/Day"]
-    storage_area_m2 = num_iso_tanks * 40 
+    # Calculation using Input from Sidebar
+    num_tanks_total = math.ceil(req_storage_gal / tank_unit_cap)
+    trucks_day = math.ceil(total_gal_day / tank_unit_cap)
+    
+    tank_description = f"{num_tanks_total}x ISO Tanks ({tank_unit_cap:,.0f} Gal)"
+    logistics_info = [f"Daily Cons: {total_gal_day:,.0f} Gal", f"Storage: {tank_description}", f"Traffic: {trucks_day} Trucks/Day"]
+    storage_area_m2 = num_tanks_total * 40 
+    fuel_storage_capex = num_tanks_total * tank_mob_cost 
     
 elif virtual_pipe_mode == "CNG":
-    total_scf_day = total_mmbtu_day * 1000 # ~1000 scf/MMBtu
+    # 1 Tube Trailer ~ 350,000 scf
+    total_scf_day = total_mmbtu_day * 1000 
     req_storage_scf = total_scf_day * storage_days
-    num_tube_trailers = math.ceil(req_storage_scf / 350000)
-    trucks_day = math.ceil(total_scf_day / 350000)
-    logistics_info = [f"Daily: {total_scf_day/1e6:,.2f} MMscf", f"Storage: {num_tube_trailers}x Tube Trailers", f"Traffic: {trucks_day} Trucks/Day"]
-    if trucks_day > 20: logistics_info.append("⚠️ HIGH TRAFFIC ALERT")
-    storage_area_m2 = num_tube_trailers * 60 
+    # Calculation using Input from Sidebar
+    num_tanks_total = math.ceil(req_storage_scf / tank_unit_cap)
+    trucks_day = math.ceil(total_scf_day / tank_unit_cap)
+    
+    tank_description = f"{num_tanks_total}x Tube Trailers"
+    logistics_info = [f"Daily Cons: {total_scf_day/1e6:,.2f} MMscf", f"Storage: {tank_description}", f"Traffic: {trucks_day} Trucks/Day"]
+    storage_area_m2 = num_tanks_total * 60 
+    fuel_storage_capex = num_tanks_total * tank_mob_cost
     
 elif virtual_pipe_mode == "Diesel":
-    total_gal_day = total_mmbtu_day * 7.3 # ~7.3 Gal/MMBtu
+    # 1 Frac Tank ~ 20,000 Gallons
+    total_gal_day = total_mmbtu_day * 7.3 
     req_storage_gal = total_gal_day * storage_days
-    num_frac_tanks = math.ceil(req_storage_gal / 20000)
-    trucks_day = math.ceil(total_gal_day / 8000)
-    logistics_info = [f"Daily: {total_gal_day:,.0f} Gal", f"Storage: {num_frac_tanks}x Frac Tanks", f"Traffic: {trucks_day} Trucks/Day"]
-    storage_area_m2 = num_frac_tanks * 50
+    # Calculation using Input from Sidebar
+    num_tanks_total = math.ceil(req_storage_gal / tank_unit_cap)
+    trucks_day = math.ceil(total_gal_day / 8000) # Assuming 8k Gal tanker for delivery
+    
+    tank_description = f"{num_tanks_total}x Frac Tanks ({tank_unit_cap:,.0f} Gal)"
+    logistics_info = [f"Daily Cons: {total_gal_day:,.0f} Gal", f"Storage: {tank_description}", f"Traffic: {trucks_day} Trucks/Day"]
+    storage_area_m2 = num_tanks_total * 50
+    fuel_storage_capex = num_tanks_total * tank_mob_cost
 
 elif virtual_pipe_mode == "Propane":
-    total_gal_day = total_mmbtu_day * 11.0 # ~11 Gal/MMBtu
+    # 1 LPG Bullet ~ 30,000 Gallons
+    total_gal_day = total_mmbtu_day * 11.0 
     req_storage_gal = total_gal_day * storage_days
-    num_lpg_tanks = math.ceil(req_storage_gal / 30000)
-    trucks_day = math.ceil(total_gal_day / 9000)
-    logistics_info = [f"Daily: {total_gal_day:,.0f} Gal", f"Storage: {num_lpg_tanks}x LPG Bullets", f"Traffic: {trucks_day} Trucks/Day"]
-    storage_area_m2 = num_lpg_tanks * 80
+    # Calculation using Input from Sidebar
+    num_tanks_total = math.ceil(req_storage_gal / tank_unit_cap)
+    trucks_day = math.ceil(total_gal_day / 9000) # Assuming 9k Gal tanker
+    
+    tank_description = f"{num_tanks_total}x LPG Bullets ({tank_unit_cap:,.0f} Gal)"
+    logistics_info = [f"Daily Cons: {total_gal_day:,.0f} Gal", f"Storage: {tank_description}", f"Traffic: {trucks_day} Trucks/Day"]
+    storage_area_m2 = num_tanks_total * 80
+    fuel_storage_capex = num_tanks_total * tank_mob_cost
 
 # Pipeline Calculation
 rec_pipe_dia = 0
@@ -553,8 +586,9 @@ gross_revenue_gain = (p_it * revenue_per_mw_mo * months_saved)
 bridge_premium_mwh = lcoe_bridge - lcoe_utility
 total_energy_during_bridge = p_gross_req * 730 * months_saved # MWh approx
 cost_of_bridge_premium = (bridge_premium_mwh * total_energy_during_bridge) / 1e6 
-# Mobilization & Setup (Includes Emissions Capex)
-capex_setup_m = ((installed_cap_site * 1000 * gen_mob_cost) + at_capex_total) / 1e6
+
+# Mobilization & Setup (Includes Emissions Capex + Fuel Storage Mob)
+capex_setup_m = ((installed_cap_site * 1000 * gen_mob_cost) + at_capex_total + fuel_storage_capex) / 1e6
 
 net_benefit_m = (gross_revenue_gain / 1e6) - cost_of_bridge_premium - capex_setup_m
 
@@ -638,8 +672,11 @@ with t2:
         if virtual_pipe_mode == "Pipeline":
             st.metric("Rec. Pipe Diameter", f"{rec_pipe_dia:.0f} inches")
         elif logistics_info:
-            for item in logistics_info:
-                st.write(f"• {item}")
+            st.markdown("🛢️ **Fuel Storage Sizing**")
+            st.write(f"**Total Volume:** {logistics_info[0]}")
+            st.info(f"**Required Assets:** {tank_description}")
+            st.write(f"**Logistics:** {logistics_info[2]}")
+            st.caption(f"Est. Mobilization Cost: ${fuel_storage_capex:,.0f} (Included in CAPEX)")
             st.metric("Est. Storage Area", f"{storage_area_m2:.0f} m²")
             
         st.divider()
@@ -659,6 +696,7 @@ with t2:
         })
         st.dataframe(df_foot.style.format({f"Area ({u_as})": "{:,.0f}"}), use_container_width=True)
         st.metric("TOTAL LAND REQUIRED", f"{d_area_l:.2f} {u_al}")
+        
         
     with c_e2:
         st.subheader("Emissions & Urea")
@@ -691,8 +729,8 @@ with t3:
         text = [f"+{gross_revenue_gain/1e6:.1f}M", f"-{cost_of_bridge_premium:.1f}M", f"-{capex_setup_m:.1f}M", f"${net_benefit_m:.1f}M"],
         y = [
             gross_revenue_gain/1e6, 
-            -cost_of_bridge_premium, # FIXED: Negative value for cost
-            -capex_setup_m,          # FIXED: Negative value for cost
+            -cost_of_bridge_premium, # Negative
+            -capex_setup_m,          # Negative
             net_benefit_m
         ], 
         connector = {"line":{"color":"rgb(63, 63, 63)"}},
@@ -729,4 +767,4 @@ with t4:
 
 # --- FOOTER ---
 st.markdown("---")
-st.caption("CAT Bridge Solutions Designer v16.1 | Powered by Prime Engineering Engine")
+st.caption("CAT Bridge Solutions Designer v19 | Powered by Prime Engineering Engine")
