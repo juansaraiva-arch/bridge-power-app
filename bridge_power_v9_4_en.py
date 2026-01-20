@@ -6,7 +6,7 @@ import plotly.express as px
 import plotly.graph_objects as go
 
 # --- PAGE CONFIGURATION ---
-st.set_page_config(page_title="CAT Bridge Solutions Designer v25", page_icon="🌉", layout="wide")
+st.set_page_config(page_title="CAT Bridge Solutions Designer v26", page_icon="🌉", layout="wide")
 
 # ==============================================================================
 # 0. HYBRID DATA LIBRARY
@@ -22,11 +22,7 @@ bridge_rental_library = {
         "heat_rate_lhv": 8780,
         "step_load_pct": 40.0,
         "emissions_nox": 0.5,
-        "emissions_co": 2.5,
-        "default_for": 2.0, "default_maint": 5.0,
-        "est_asset_value_kw": 850.0, 
-        "est_mob_kw": 80.0,
-        "gas_pressure_min_psi": 1.5,
+        "est_asset_value_kw": 850.0, "est_mob_kw": 80.0,
         "reactance_xd_2": 0.14
     },
     "TM2500": {
@@ -38,11 +34,7 @@ bridge_rental_library = {
         "heat_rate_lhv": 9220,
         "step_load_pct": 20.0,
         "emissions_nox": 0.6,
-        "emissions_co": 0.6,
-        "default_for": 1.5, "default_maint": 3.0,
-        "est_asset_value_kw": 900.0,
-        "est_mob_kw": 120.0,
-        "gas_pressure_min_psi": 450.0,
+        "est_asset_value_kw": 900.0, "est_mob_kw": 120.0,
         "reactance_xd_2": 0.17
     },
     "SMT60": {
@@ -54,27 +46,19 @@ bridge_rental_library = {
         "heat_rate_lhv": 10830,
         "step_load_pct": 20.0,
         "emissions_nox": 0.6,
-        "emissions_co": 0.6,
-        "default_for": 1.0, "default_maint": 2.0,
-        "est_asset_value_kw": 950.0,
-        "est_mob_kw": 60.0,
-        "gas_pressure_min_psi": 250.0,
+        "est_asset_value_kw": 950.0, "est_mob_kw": 60.0,
         "reactance_xd_2": 0.18
     },
     "SMT130": {
         "description": "Solar Mobile (Titan 130) - Dual Fuel",
-        "fuels": ["Natural Gas", "Diesel", "Propane"], 
+        "fuels": ["Natural Gas", "Diesel", "Propane"],
         "type": "Gas Turbine",
         "iso_rating_mw": {60: 16.0, 50: 15.8}, 
         "electrical_efficiency": 0.354,
         "heat_rate_lhv": 9630,
         "step_load_pct": 20.0,
         "emissions_nox": 0.6,
-        "emissions_co": 0.6,
-        "default_for": 1.0, "default_maint": 2.0,
-        "est_asset_value_kw": 900.0,
-        "est_mob_kw": 70.0,
-        "gas_pressure_min_psi": 300.0,
+        "est_asset_value_kw": 900.0, "est_mob_kw": 70.0,
         "reactance_xd_2": 0.18
     },
     "XQ2280": {
@@ -86,11 +70,7 @@ bridge_rental_library = {
         "heat_rate_lhv": 9000,
         "step_load_pct": 80.0,
         "emissions_nox": 0.6,
-        "emissions_co": 0.1,
-        "default_for": 1.0, "default_maint": 4.0,
-        "est_asset_value_kw": 600.0,
-        "est_mob_kw": 50.0,
-        "gas_pressure_min_psi": 0,
+        "est_asset_value_kw": 600.0, "est_mob_kw": 50.0,
         "reactance_xd_2": 0.13
     },
     "XQC1600": {
@@ -102,11 +82,7 @@ bridge_rental_library = {
         "heat_rate_lhv": 9100,
         "step_load_pct": 75.0,
         "emissions_nox": 4.0,
-        "emissions_co": 1.0,
-        "default_for": 1.5, "default_maint": 4.0,
-        "est_asset_value_kw": 550.0,
-        "est_mob_kw": 50.0,
-        "gas_pressure_min_psi": 0,
+        "est_asset_value_kw": 550.0, "est_mob_kw": 50.0,
         "reactance_xd_2": 0.14
     },
     "XQ1140": {
@@ -118,17 +94,13 @@ bridge_rental_library = {
         "heat_rate_lhv": 9480,
         "step_load_pct": 100.0,
         "emissions_nox": 4.0,
-        "emissions_co": 1.0,
-        "default_for": 1.0, "default_maint": 3.0,
-        "est_asset_value_kw": 500.0,
-        "est_mob_kw": 40.0,
-        "gas_pressure_min_psi": 0,
+        "est_asset_value_kw": 500.0, "est_mob_kw": 40.0,
         "reactance_xd_2": 0.12
     }
 }
 
 # ==============================================================================
-# 1. GLOBAL SETTINGS & SIDEBAR
+# 1. INPUTS
 # ==============================================================================
 
 with st.sidebar:
@@ -141,207 +113,98 @@ with st.sidebar:
     is_imperial = "Imperial" in unit_system
     is_50hz = freq_hz == 50
 
-    if is_imperial:
-        u_temp, u_dist, u_area_s, u_area_l = "°F", "ft", "ft²", "Acres"
-        u_vol, u_mass, u_power = "gal", "Short Tons", "MW"
-        u_energy, u_therm, u_water = "MWh", "MMBtu", "gal/day"
-        u_press = "psig"
-    else:
-        u_temp, u_dist, u_area_s, u_area_l = "°C", "m", "m²", "Ha"
-        u_vol, u_mass, u_power = "m³", "Tonnes", "MW"
-        u_energy, u_therm, u_water = "MWh", "GJ", "m³/day"
-        u_press = "Bar"
-
-    # --- 1. PROFILE ---
+    # 1. Profile
     st.header("1. Data Center Profile")
     dc_type_sel = st.selectbox("Data Center Type", ["AI Factory (Training)", "Hyperscale Standard"])
     is_ai = "AI" in dc_type_sel
     
-    # DEFAULTS
     def_step_load = 40.0 if is_ai else 10.0
     def_use_bess = True if is_ai else False
     
     p_it = st.number_input("Critical IT Load (MW)", 1.0, 1000.0, 50.0, step=10.0)
     pue_input = st.number_input("Design PUE", 1.0, 2.0, 1.35, step=0.01)
     
-    avail_req = st.number_input("Availability Target (%)", 90.0, 99.99999, 99.99, format="%.5f")
     step_load_req = st.number_input("Expected Step Load (%)", 0.0, 100.0, def_step_load)
     dist_loss_pct = st.number_input("Distribution Losses (%)", 0.0, 10.0, 1.0) / 100.0
 
     st.divider()
 
-    # --- 2. TECHNOLOGY & FUEL ---
+    # 2. Tech
     st.header("2. Technology & Fuel")
     fuel_type_sel = st.selectbox("Fuel Source", ["Natural Gas", "Diesel", "Propane"])
     
-    avail_models = []
-    for k, v in bridge_rental_library.items():
-        if fuel_type_sel in v['fuels']:
-            avail_models.append(k)
+    avail_models = [k for k, v in bridge_rental_library.items() if fuel_type_sel in v['fuels']]
+    if not avail_models: st.error("No units found"); st.stop()
             
     selected_model = st.selectbox("Select Bridge Unit", avail_models)
     eng_data = bridge_rental_library[selected_model]
     st.info(f"**{eng_data['description']}**")
 
-    # 3. Fuel Logic & Properties
+    # Storage Vars
     virtual_pipe_mode = "None"
     methane_number = 80
-    
-    # Initialize storage variables (to ensure they exist)
-    storage_days = 0
-    tank_unit_cap = 1.0 
-    tank_mob_cost = 0.0
-    tank_area_unit = 0.0
-    truck_capacity = 8000.0 
+    tank_unit_cap, tank_mob_cost, tank_area_unit, storage_days = 1.0, 0.0, 0.0, 0
 
     if fuel_type_sel == "Natural Gas":
-        st.markdown("🔥 **Gas Properties**")
         methane_number = st.number_input("Methane Number (MN)", 30, 100, 80)
         gas_source = st.radio("Supply Method", ["Pipeline", "Virtual Pipeline (LNG)", "Virtual Pipeline (CNG)"])
         
-        if gas_source == "Pipeline":
-            virtual_pipe_mode = "Pipeline"
+        if gas_source == "Pipeline": virtual_pipe_mode = "Pipeline"
         elif "LNG" in gas_source:
             virtual_pipe_mode = "LNG"
-            st.markdown("🔹 **LNG Storage Setup**")
+            st.markdown("🔹 **LNG Storage**")
             storage_days = st.number_input("Autonomy (Days)", 1, 30, 5)
-            c1, c2 = st.columns(2)
-            tank_unit_cap = c1.number_input("ISO Tank Cap (Gal)", 1000, 20000, 10000)
-            tank_mob_cost = c2.number_input("Mob Cost/Tank ($)", 0, 50000, 5000)
-            truck_capacity = st.number_input("Truck Delivery Vol (Gal)", 1000, 15000, 10000)
+            tank_unit_cap = st.number_input("ISO Tank Cap (Gal)", 1000, 20000, 10000)
+            tank_mob_cost = st.number_input("Mob Cost/Tank ($)", 0, 50000, 5000)
             tank_area_unit = 40.0
-            
         elif "CNG" in gas_source:
             virtual_pipe_mode = "CNG"
-            st.markdown("🔹 **CNG Storage Setup**")
+            st.markdown("🔹 **CNG Storage**")
             storage_days = st.number_input("Autonomy (Days)", 1, 30, 1)
-            c1, c2 = st.columns(2)
-            tank_unit_cap = c1.number_input("Trailer Cap (scf)", 50000, 1000000, 350000)
-            tank_mob_cost = c2.number_input("Mob Cost/Trailer ($)", 0, 50000, 2000)
-            truck_capacity = tank_unit_cap 
+            tank_unit_cap = st.number_input("Trailer Cap (scf)", 50000, 1000000, 350000)
+            tank_mob_cost = st.number_input("Mob Cost/Trailer ($)", 0, 50000, 2000)
             tank_area_unit = 60.0
             
     elif fuel_type_sel == "Diesel":
         virtual_pipe_mode = "Diesel"
-        st.markdown("🔹 **Diesel Storage Setup**")
+        st.markdown("🔹 **Diesel Storage**")
         storage_days = st.number_input("Autonomy (Days)", 1, 30, 3)
-        c1, c2 = st.columns(2)
-        tank_unit_cap = c1.number_input("Frac Tank Cap (Gal)", 1000, 50000, 20000)
-        tank_mob_cost = c2.number_input("Mob Cost/Tank ($)", 0, 50000, 2500)
-        truck_capacity = st.number_input("Truck Delivery Vol (Gal)", 1000, 15000, 8000)
+        tank_unit_cap = st.number_input("Frac Tank Cap (Gal)", 1000, 50000, 20000)
+        tank_mob_cost = st.number_input("Mob Cost/Tank ($)", 0, 50000, 2500)
         tank_area_unit = 50.0
         
     elif fuel_type_sel == "Propane":
         virtual_pipe_mode = "Propane"
-        st.markdown("🔹 **LPG Storage Setup**")
+        st.markdown("🔹 **LPG Storage**")
         storage_days = st.number_input("Autonomy (Days)", 1, 30, 5)
-        c1, c2 = st.columns(2)
-        tank_unit_cap = c1.number_input("Bullet Cap (Gal)", 1000, 100000, 30000)
-        tank_mob_cost = c2.number_input("Mob Cost/Tank ($)", 0, 50000, 5000)
-        truck_capacity = st.number_input("Truck Delivery Vol (Gal)", 1000, 15000, 9000)
+        tank_unit_cap = st.number_input("Tank Cap (Gal)", 1000, 100000, 30000)
+        tank_mob_cost = st.number_input("Mob Cost/Tank ($)", 0, 50000, 5000)
         tank_area_unit = 80.0
 
-    # Tech Inputs Continued
     st.divider()
+    # Tech Specs Override
     def_mw = eng_data['iso_rating_mw'][freq_hz]
     unit_size_iso = st.number_input("Unit Prime Rating (ISO MW)", 0.1, 100.0, def_mw, format="%.3f")
-    
-    eff_input_method = st.radio("Efficiency Input", ["Efficiency (%)", "Heat Rate LHV (Btu/kWh)"])
-    def_eff_pct = eng_data['electrical_efficiency'] * 100.0
-    
-    if eff_input_method == "Efficiency (%)":
-        eff_user = st.number_input("Electrical Efficiency (%)", 20.0, 65.0, def_eff_pct, format="%.1f")
-        final_elec_eff = eff_user / 100.0
-        hr_btu_kwh = 3412.14 / final_elec_eff
-    else:
-        hr_user = st.number_input("Heat Rate LHV (Btu/kWh)", 5000.0, 15000.0, eng_data['heat_rate_lhv'], format="%.0f")
-        final_elec_eff = 3412.14 / hr_user
-        hr_btu_kwh = hr_user
-
     step_load_cap = st.number_input("Unit Step Load Capability (%)", 0.0, 100.0, eng_data['step_load_pct'])
-    xd_2_pu = st.number_input('Subtransient Reactance (Xd" pu)', 0.05, 0.30, eng_data.get('reactance_xd_2', 0.15), step=0.01)
-
-    st.caption("Availability Parameters (N+M+S)")
-    c_r1, c_r2 = st.columns(2)
-    maint_outage_pct = c_r1.number_input("Maint. Unavail (%)", 0.0, 20.0, float(eng_data.get('default_maint', 5.0))) / 100.0
-    forced_outage_pct = c_r2.number_input("Forced Outage Rate (%)", 0.0, 20.0, float(eng_data.get('default_for', 2.0))) / 100.0
+    
+    st.markdown("⚠️ **Parasitic Load**")
+    st.info("Defined as % of Nameplate Rating (Fixed per running unit)")
     gen_parasitic_pct = st.number_input("Gen. Parasitic Load (%)", 0.0, 10.0, 2.5) / 100.0
 
     st.divider()
-
-    # --- 3. SITE ---
-    st.header("3. Site & Noise")
-    derate_mode = st.radio("Derate Method", ["Auto-Calculate", "Manual Entry"])
-    derate_factor_calc = 1.0
     
-    if derate_mode == "Auto-Calculate":
-        if is_imperial:
-            site_temp_f = st.slider(f"Max Ambient Temp ({u_temp})", 32, 122, 95)
-            site_alt_ft = st.number_input(f"Altitude ({u_dist})", 0, 13000, 328)
-            site_temp_c = (site_temp_f - 32) * 5/9
-            site_alt_m = site_alt_ft / 3.28084
-        else:
-            site_temp_c = st.slider(f"Max Ambient Temp ({u_temp})", 0, 50, 35)
-            site_alt_m = st.number_input(f"Altitude ({u_dist})", 0, 4000, 100)
-        
-        loss_temp = max(0, (site_temp_c - 25) * 0.01) 
-        loss_alt = max(0, (site_alt_m - 100) * 0.0001)
-        loss_mn = 0.0
-        if fuel_type_sel == "Natural Gas":
-            loss_mn = max(0, (75 - methane_number) * 0.005) 
-        derate_factor_calc = 1.0 - (loss_temp + loss_alt + loss_mn)
-        st.info(f"Calc Derate: {derate_factor_calc:.3f} (MN Loss: {loss_mn:.1%})")
-    else:
-        manual_derate_pct = st.number_input("Manual Derate (%)", 0.0, 50.0, 5.0)
-        derate_factor_calc = 1.0 - (manual_derate_pct / 100.0)
-
-    if virtual_pipe_mode == "Pipeline":
-        st.markdown("⛽ **Pipeline Config**")
-        dist_gas_main_m = st.number_input("Distance to Gas Main (m)", 10.0, 20000.0, 1000.0, step=50.0)
-        if is_imperial:
-            supply_pressure_disp = st.number_input(f"Supply Pressure ({u_press})", 5.0, 1000.0, 60.0, step=5.0)
-            supply_pressure_psi = supply_pressure_disp
-        else:
-            supply_pressure_disp = st.number_input(f"Supply Pressure ({u_press})", 0.5, 100.0, 4.1, step=0.5)
-            supply_pressure_psi = supply_pressure_disp * 14.5038
-    else:
-        dist_gas_main_m = 0; supply_pressure_psi = 0 
-
-    st.markdown("🔌 **Grid Connection**")
-    grid_connected = st.checkbox("Grid Connected (Parallel)", value=True)
-    if grid_connected:
-        grid_mva_sc = st.number_input("Grid Short Circuit Capacity (MVA)", 50.0, 5000.0, 500.0, step=50.0)
-    else:
-        grid_mva_sc = 0.0
-
-    st.markdown("🔊 **Noise**")
-    dist_neighbor_m = st.number_input(f"Distance to Neighbor ({u_dist})", 10.0, 5000.0, 100.0)
-    if is_imperial: dist_neighbor_m = dist_neighbor_m / 3.28084
-    source_noise_dba = st.number_input("Source Noise @ 1m (dBA)", 60.0, 120.0, 85.0)
-    noise_limit = 70.0 
-
+    # 3. Site
+    st.header("3. Site & Conditions")
+    manual_derate_pct = st.number_input("Site Derating (%)", 0.0, 50.0, 5.0)
+    derate_factor_calc = 1.0 - (manual_derate_pct / 100.0)
+    
     st.divider()
 
-    # --- 4. STRATEGY ---
+    # 4. Strategy
     st.header("4. Strategy")
     use_bess = st.checkbox("Include BESS (Optimization)", value=def_use_bess)
-    
-    st.divider()
 
-    # --- 6. REGULATORY & EMISSIONS ---
-    st.header("6. Regulatory")
-    reg_zone = st.selectbox("Regulatory Zone", ["USA - EPA Major", "EU Standard", "LatAm / No-Reg"])
-    limit_nox_tpy = 250.0 if "EPA" in reg_zone else (150.0 if "EU" in reg_zone else 9999.0)
-    urea_days = st.number_input("Urea Storage (Days)", 1, 30, 7)
-    
-    st.markdown("🛠️ **After-Treatment Costs (USD)**")
-    cost_scr_kw = st.number_input("SCR System Cost (USD/kW)", 0.0, 200.0, 60.0)
-    cost_oxicat_kw = st.number_input("Oxidation Cat Cost (USD/kW)", 0.0, 100.0, 15.0)
-    force_oxicat = st.checkbox("Force Oxicat Inclusion", value=False)
-
-    st.divider()
-
-    # --- 7. FINANCIALS ---
+    # 7. Financials
     st.header("7. Financials")
     if fuel_type_sel == "Natural Gas":
         fuel_price_unit = st.number_input("Gas Price (USD/MMBtu)", 1.0, 20.0, 5.0)
@@ -354,379 +217,213 @@ with st.sidebar:
         fuel_price_mmbtu = fuel_price_unit / 0.091 
 
     if virtual_pipe_mode in ["LNG", "CNG"]:
-        vp_premium = st.number_input("Virtual Pipe Premium ($/MMBtu)", 0.0, 15.0, 4.0, help="Logistics cost")
+        vp_premium = st.number_input("Virtual Pipe Premium ($/MMBtu)", 0.0, 15.0, 4.0)
         fuel_price_mmbtu += vp_premium
 
-    gen_mob_cost = st.number_input("Mobilization/Install (USD/kW)", 10.0, 1000.0, eng_data['est_mob_kw'])
+    gen_mob_cost = st.number_input("Mob/Install Cost (USD/kW)", 10.0, 1000.0, eng_data['est_mob_kw'])
     cap_charge = st.number_input("Capacity Charge (USD/MW-mo)", 5000.0, 100000.0, 28000.0, step=1000.0)
-    var_om = st.number_input("Variable O&M (USD/MWh)", 0.0, 100.0, 21.50) 
-    grid_rate_kwh = st.number_input("Utility Grid Rate (USD/kWh)", 0.01, 0.50, 0.12, format="%.3f") 
     
-    st.markdown("⏱️ **Time-to-Market Analysis**")
-    revenue_per_mw_mo = st.number_input("Revenue Loss (USD/MW/mo)", 10000.0, 1000000.0, 150000.0, step=10000.0)
-    months_saved = st.number_input("Months Saved vs Utility", 1, 60, 18)
-    
-    st.caption("Future Value (Post-Grid)")
-    buyout_pct = st.number_input("Buyout Residual Value (%)", 0.0, 100.0, 20.0)
-    ref_new_capex = eng_data['est_asset_value_kw']
-    
-    st.caption("VPP Revenue")
-    vpp_arb_spread = st.number_input("VPP Arbitrage ($/MWh)", 0.0, 200.0, 40.0)
-    vpp_cap_pay = st.number_input("VPP Capacity ($/MW-yr)", 0.0, 100000.0, 28000.0)
+    revenue_per_mw_mo = st.number_input("Revenue Loss (USD/MW/mo)", 10000.0, 1000000.0, 150000.0)
+    months_saved = st.number_input("Months Saved", 1, 60, 18)
 
 # ==============================================================================
-# 2. CALCULATION ENGINE
+# 2. CALCULATION ENGINE (PHYSICS & THERMODYNAMICS)
 # ==============================================================================
 
-# A. LOAD & POWER 
+# A. BASE LOADS
 p_total_site_load = p_it * pue_input
 p_dist_loss = p_total_site_load * dist_loss_pct
-p_net_gen_req = p_total_site_load + p_dist_loss
-p_gross_req = p_net_gen_req / (1 - gen_parasitic_pct)
+p_net_gen_req = p_total_site_load + p_dist_loss # Power required at Gen Bus
 
-# Voltage Logic
-if is_50hz:
-    rec_voltage_str = "11 kV" if p_gross_req < 20 else ("33 kV" if p_gross_req > 50 else "11 kV / 33 kV")
-    op_voltage_kv = 11.0 if p_gross_req < 35 else 33.0
-else:
-    rec_voltage_str = "13.8 kV" if p_gross_req < 25 else ("34.5 kV" if p_gross_req > 60 else "13.8 kV / 34.5 kV")
-    op_voltage_kv = 13.8 if p_gross_req < 45 else 34.5
-
-# B. FLEET SIZING & EFFICIENCY
+# B. FLEET SIZING & OPERATING POINT
 unit_site_cap = unit_size_iso * derate_factor_calc
+step_mw_req_site = p_it * (step_load_req / 100.0)
 
+# --- CRITICAL LOGIC: N_RUNNING & LOAD FACTOR ---
 if use_bess:
+    # BESS handles steps. Run engines at optimal base load.
     target_load_factor = 0.95 
-    n_running = math.ceil(p_gross_req / (unit_site_cap * target_load_factor))
-    step_mw_req = p_it * (step_load_req / 100.0)
-    bess_power = max(step_mw_req, unit_site_cap) 
-    bess_energy = bess_power * 2 
+    n_base_mw = p_net_gen_req / (1 - gen_parasitic_pct) # Estimate gross
+    n_running = math.ceil(n_base_mw / (unit_site_cap * target_load_factor))
+    
+    bess_power = max(step_mw_req_site, unit_site_cap)
+    bess_energy = bess_power * 2 # 2 hr duration
 else:
-    target_load_factor = 0.85
-    step_mw_req = p_it * (step_load_req / 100.0)
-    n_calc = math.ceil(p_gross_req / unit_site_cap)
+    # No BESS. Engines provide Spinning Reserve for Step Load.
+    # Logic: Available Headroom >= Step Load
+    n_min = math.ceil(p_net_gen_req / unit_site_cap)
+    n_running = n_min
     while True:
-        headroom_mw = (n_calc * unit_site_cap) * (step_load_cap/100.0)
-        load_cap = n_calc * unit_site_cap
-        if headroom_mw >= step_mw_req and load_cap >= p_gross_req:
+        # Step Capability = Running Cap * Step% (or remaining headroom)
+        total_cap_mw = n_running * unit_site_cap
+        # Parasitics depend on N (Fixed per unit)
+        total_parasitics_mw = n_running * (unit_size_iso * gen_parasitic_pct) # Fixed load per unit
+        
+        # Available Gross Capacity for Load
+        avail_gross_for_load = total_cap_mw - total_parasitics_mw
+        
+        # Current Load %
+        gross_load_needed = p_net_gen_req + total_parasitics_mw
+        current_load_pct = gross_load_needed / total_cap_mw
+        
+        # Headroom Check
+        headroom_mw = total_cap_mw - gross_load_needed
+        
+        # Transient Check (Can the fleet accept the step?)
+        step_capacity_mw = total_cap_mw * (step_load_cap / 100.0)
+        
+        # Valid if Headroom > Step AND Step Cap > Step
+        if headroom_mw >= step_mw_req_site and step_capacity_mw >= step_mw_req_site:
             break
-        n_calc += 1
-    n_running = n_calc
-    bess_power = 0
-    bess_energy = 0
+        n_running += 1
+    
+    bess_power = 0; bess_energy = 0
 
-# Heat Rate Calculation Logic
-real_load_factor = p_gross_req / (n_running * unit_site_cap)
+# --- C. THERMODYNAMICS & EFFICIENCY ---
+# 1. Total Parasitics (Fixed Physics: Fans/Pumps run per unit)
+total_parasitics_mw = n_running * (unit_size_iso * gen_parasitic_pct)
+
+# 2. Total Gross Generation Required
+p_gross_total = p_net_gen_req + total_parasitics_mw
+
+# 3. Real Fleet Load Factor
+real_load_factor = p_gross_total / (n_running * unit_site_cap)
+
+# 4. Part-Load Efficiency Correction (RICE vs Turbine)
 base_eff = eng_data['electrical_efficiency']
 type_tech = eng_data['type']
 
-# Part Load Penalty
 if type_tech == "High Speed": 
-    if real_load_factor >= 0.75: eff_factor = 1.0
-    else: eff_factor = 1.0 - (0.4 * (0.75 - real_load_factor)**1.5)
-else: # Turbine
-    eff_factor = 1.0 - (0.5 * (1.0 - real_load_factor))
+    # Recip Engine Curve: Stable high, drops below 75%
+    if real_load_factor >= 0.75: 
+        eff_factor = 1.0
+    else: 
+        # Quadratic decay below 75%
+        eff_factor = 1.0 - (0.5 * (0.75 - real_load_factor)**2)
+else: 
+    # Turbine: Linear drop
+    eff_factor = 1.0 - (0.6 * (1.0 - real_load_factor))
 
 gross_eff_site = base_eff * eff_factor
 gross_hr_lhv = 3412.14 / gross_eff_site
-net_eff_site = gross_eff_site * (1 - gen_parasitic_pct) * (1 - dist_loss_pct)
-net_hr_lhv = 3412.14 / net_eff_site
+
+# 5. NET HEAT RATE (The Metric that matters)
+# Net HR = Fuel Input (MMBtu) / Net Output (MWh)
+fuel_input_mmbtu_hr = p_gross_total * (gross_hr_lhv / 1e6)
+net_output_mw = p_it # Useful IT Load (Strict Net) OR p_net_gen_req (Facility Net). 
+# Standard Industry Practice: Net HR usually refers to Facility Net (Post-Aux, Pre-Dist Loss)
+# But let's calculate based on p_net_gen_req (Output from Gen Bus - Aux)
+net_hr_lhv = (fuel_input_mmbtu_hr * 1e6) / p_net_gen_req
 
 # HHV Conversion
 hhv_factor = 1.108 if fuel_type_sel == "Natural Gas" else (1.06 if fuel_type_sel == "Diesel" else 1.09)
 net_hr_hhv = net_hr_lhv * hhv_factor
 
-n_maint = math.ceil(n_running * maint_outage_pct)
-
-if avail_req < 99.0: n_red_tier = 1 
-elif avail_req < 99.9: n_red_tier = 1 
-elif avail_req < 99.99: n_red_tier = 2 
-else: n_red_tier = 3 
-
-n_forced_buffer = math.ceil(n_running * forced_outage_pct)
-n_reserve = max(n_forced_buffer, n_red_tier)
-
-n_total = n_running + n_maint + n_reserve
-installed_cap_site = n_total * unit_site_cap
-
-# C. FUEL & LOGISTICS (CALCULATION)
-net_eff = final_elec_eff * (1 - (gen_parasitic_pct + dist_loss_pct))
-hr_net_lhv_btu = 3412.14 / net_eff
-# Use GROSS efficiency for fuel consumption
-total_mmbtu_day = (p_gross_req * 24 * gross_hr_lhv) / 1e6
-
-logistics_info = []
-storage_area_m2 = 0
-fuel_storage_capex = 0
-tank_description = ""
-num_tanks_total = 0
+# --- D. LOGISTICS ---
+total_mmbtu_day = fuel_input_mmbtu_hr * 24
+num_tanks = 0; log_capex = 0; log_text = "Pipeline"
 
 if virtual_pipe_mode == "LNG":
-    total_gal_day = total_mmbtu_day * 12.5 
-    req_storage_gal = total_gal_day * storage_days
-    num_tanks_total = math.ceil(req_storage_gal / tank_unit_cap)
-    trucks_day = math.ceil(total_gal_day / truck_capacity)
-    tank_description = f"{num_tanks_total}x ISO Tanks ({tank_unit_cap:,.0f} Gal)"
-    logistics_info = [f"Daily Cons: {total_gal_day:,.0f} Gal", f"Storage: {tank_description}", f"Traffic: {trucks_day} Trucks/Day"]
-    storage_area_m2 = num_tanks_total * tank_area_unit 
-    fuel_storage_capex = num_tanks_total * tank_mob_cost 
-    
+    vol_day = total_mmbtu_day * 12.5
+    num_tanks = math.ceil((vol_day * storage_days)/tank_unit_cap)
+    log_capex = num_tanks * tank_mob_cost
+    log_text = f"LNG: {vol_day:,.0f} gpd"
 elif virtual_pipe_mode == "CNG":
-    total_scf_day = total_mmbtu_day * 1000 
-    req_storage_scf = total_scf_day * storage_days
-    num_tanks_total = math.ceil(req_storage_scf / tank_unit_cap)
-    trucks_day = math.ceil(total_scf_day / truck_capacity)
-    tank_description = f"{num_tanks_total}x Tube Trailers"
-    logistics_info = [f"Daily Cons: {total_scf_day/1e6:,.2f} MMscf", f"Storage: {tank_description}", f"Traffic: {trucks_day} Trucks/Day"]
-    storage_area_m2 = num_tanks_total * tank_area_unit 
-    fuel_storage_capex = num_tanks_total * tank_mob_cost
-    
-elif virtual_pipe_mode == "Diesel":
-    total_gal_day = total_mmbtu_day * 7.3 
-    req_storage_gal = total_gal_day * storage_days
-    num_tanks_total = math.ceil(req_storage_gal / tank_unit_cap)
-    trucks_day = math.ceil(total_gal_day / truck_capacity)
-    tank_description = f"{num_tanks_total}x Frac Tanks ({tank_unit_cap:,.0f} Gal)"
-    logistics_info = [f"Daily Cons: {total_gal_day:,.0f} Gal", f"Storage: {tank_description}", f"Traffic: {trucks_day} Trucks/Day"]
-    storage_area_m2 = num_tanks_total * tank_area_unit
-    fuel_storage_capex = num_tanks_total * tank_mob_cost
+    vol_day = total_mmbtu_day * 1000
+    num_tanks = math.ceil((vol_day * storage_days)/tank_unit_cap)
+    log_capex = num_tanks * tank_mob_cost
+    log_text = f"CNG: {vol_day/1e6:.2f} MMscfd"
+elif virtual_pipe_mode in ["Diesel", "Propane"]:
+    conv = 7.3 if virtual_pipe_mode == "Diesel" else 11.0
+    vol_day = total_mmbtu_day * conv
+    num_tanks = math.ceil((vol_day * storage_days)/tank_unit_cap)
+    log_capex = num_tanks * tank_mob_cost
+    log_text = f"{virtual_pipe_mode}: {vol_day:,.0f} gpd"
 
-elif virtual_pipe_mode == "Propane":
-    total_gal_day = total_mmbtu_day * 11.0 
-    req_storage_gal = total_gal_day * storage_days
-    num_tanks_total = math.ceil(req_storage_gal / tank_unit_cap)
-    trucks_day = math.ceil(total_gal_day / truck_capacity)
-    tank_description = f"{num_tanks_total}x LPG Bullets ({tank_unit_cap:,.0f} Gal)"
-    logistics_info = [f"Daily Cons: {total_gal_day:,.0f} Gal", f"Storage: {tank_description}", f"Traffic: {trucks_day} Trucks/Day"]
-    storage_area_m2 = num_tanks_total * tank_area_unit
-    fuel_storage_capex = num_tanks_total * tank_mob_cost
-
-# Pipeline
-rec_pipe_dia = 0
-if virtual_pipe_mode == "Pipeline":
-    peak_scfh = (total_mmbtu_day / 24) * 1000
-    actual_flow_acfm = peak_scfh * (14.7 / (supply_pressure_psi + 14.7)) / 60 
-    target_area_ft2 = actual_flow_acfm / (65 * 60) 
-    target_dia_in = math.sqrt(target_area_ft2 * 4 / math.pi) * 12
-    rec_pipe_dia = max(4, math.ceil(target_dia_in))
-
-# D. SHORT CIRCUIT
-gen_mva_total = installed_cap_site / 0.8
-gen_sc_mva = gen_mva_total / xd_2_pu
-total_sc_mva = gen_sc_mva + grid_mva_sc
-isc_ka = total_sc_mva / (math.sqrt(3) * op_voltage_kv)
-standard_breakers = [25, 31.5, 40, 50, 63]
-rec_breaker = 63
-for b in standard_breakers:
-    if b > (isc_ka * 1.1): 
-        rec_breaker = b
-        break
-
-# E. EMISSIONS
-attenuation = 20 * math.log10(dist_neighbor_m)
-noise_rec = source_noise_dba + (10 * math.log10(n_running)) - attenuation
-total_bhp = p_gross_req * 1341
-nox_tpy = (eng_data['emissions_nox'] * total_bhp * 8760) / 907185
-req_scr = nox_tpy > limit_nox_tpy
-urea_vol_yr = p_gross_req * 1.5 * 8760 if req_scr else 0
-
-at_capex_total = 0
-if req_scr:
-    at_capex_total += (installed_cap_site * 1000) * cost_scr_kw
-if force_oxicat: 
-    at_capex_total += (installed_cap_site * 1000) * cost_oxicat_kw
-
-# F. FINANCIALS
-gen_mwh_yr = p_gross_req * 8760
-# Fuel cost using NET HR LHV to price efficiency
+# --- E. FINANCIALS ---
+gen_mwh_yr = p_gross_total * 8760 # Fuel is paid on Gross
+# Fuel Cost per MWh (Useful)
+# Cost = (Fuel Input / Net Gen) * Price
 fuel_cost_mwh = (net_hr_lhv / 1e6) * fuel_price_mmbtu * 1000
 
-rental_cost_yr = installed_cap_site * cap_charge * 12
-rental_cost_mwh = rental_cost_yr / gen_mwh_yr
+rental_cost_yr = (n_running * unit_site_cap) * cap_charge * 12
+rental_cost_mwh = rental_cost_yr / (p_net_gen_req * 8760)
+var_om = 21.5
 lcoe_bridge = fuel_cost_mwh + rental_cost_mwh + var_om
-lcoe_utility = grid_rate_kwh * 1000
+lcoe_utility = 120.0
 
-gross_revenue_gain = (p_it * revenue_per_mw_mo * months_saved)
-bridge_premium_mwh = lcoe_bridge - lcoe_utility
-total_energy_during_bridge = p_gross_req * 730 * months_saved
-cost_of_bridge_premium = (bridge_premium_mwh * total_energy_during_bridge) / 1e6 
-
-capex_setup_m = ((installed_cap_site * 1000 * gen_mob_cost) + at_capex_total + fuel_storage_capex) / 1e6
-
-net_benefit_m = (gross_revenue_gain / 1e6) - cost_of_bridge_premium - capex_setup_m
-
-total_asset_value_m = (installed_cap_site * 1000 * ref_new_capex) / 1e6
-buyout_price_m = total_asset_value_m * (buyout_pct / 100.0)
-savings_vs_new = total_asset_value_m - buyout_price_m
-
-rev_arb = installed_cap_site * vpp_arb_spread * 365 
-rev_cap = installed_cap_site * vpp_cap_pay
-total_vpp_yr_m = (rev_arb + rev_cap) / 1e6
-
-# G. FOOTPRINT
-area_gen_total = n_total * 150 
-area_bess_total = bess_power * 30 
-area_urea_total = (math.ceil((urea_vol_yr/365)*7/30000) * 50) if req_scr else 0
-area_sub_total = 2500 
-
-total_area_m2 = (area_gen_total + storage_area_m2 + area_bess_total + area_urea_total + area_sub_total) * 1.2 
+gross_rev = p_it * revenue_per_mw_mo * months_saved
+cost_energy_prem = (lcoe_bridge - lcoe_utility) * (p_net_gen_req * 730 * months_saved) / 1e6
+capex_total = ((n_running * unit_site_cap * 1000 * gen_mob_cost) + log_capex) / 1e6
+net_benefit = (gross_rev/1e6) - cost_energy_prem - capex_total
 
 # ==============================================================================
 # 3. DASHBOARD
 # ==============================================================================
 
-if is_imperial:
-    d_area_s = total_area_m2 * 10.764; u_as = "ft²"
-    d_area_l = (total_area_m2 * 10.764) / 43560; u_al = "Acres"
-else:
-    d_area_s = total_area_m2; u_as = "m²"
-    d_area_l = total_area_m2 / 10000; u_al = "Ha"
-
 c1, c2, c3, c4 = st.columns(4)
-c1.metric("Bridge Capacity", f"{p_net_gen_req:.1f} MW", f"IT Load: {p_it:.1f} MW")
-c2.metric("Fleet Configuration", f"{n_total} Units", f"N+M+S: {n_running}+{n_maint}+{n_reserve}")
-c3.metric("LCOE (Bridge)", f"${lcoe_bridge:.2f}/MWh", f"Grid: ${lcoe_utility:.2f}")
-c4.metric("Net Benefit (TtM)", f"${net_benefit_m:.1f} M", f"{months_saved} Months Saved")
+c1.metric("Net Capacity (IT)", f"{p_it:.1f} MW", f"Gross Needed: {p_gross_total:.1f} MW")
+c2.metric("Net Heat Rate (LHV)", f"{net_hr_lhv:,.0f} Btu/kWh", f"Load Factor: {real_load_factor*100:.1f}%")
+c3.metric("LCOE (Bridge)", f"${lcoe_bridge:.2f}/MWh", f"Fuel: ${fuel_cost_mwh:.2f}")
+c4.metric("Net Benefit", f"${net_benefit:.1f} M", f"Saved: {months_saved} Mo")
 
 st.divider()
 
-t1, t2, t3, t4 = st.tabs(["⚙️ Engineering", "🏗️ Site & Env", "💰 Business Case", "🔮 Future Value"])
+t1, t2, t3 = st.tabs(["⚙️ Thermodynamics", "🏗️ Logistics & Site", "💰 Business Case"])
 
 with t1:
     col1, col2 = st.columns(2)
     with col1:
-        st.subheader("🔥 Heat Rate & Efficiency Analysis")
-        # Explicit Metrics
-        ch1, ch2 = st.columns(2)
-        ch1.metric("Gross Heat Rate (LHV)", f"{gross_hr_lhv:,.0f} Btu/kWh", f"Eff: {gross_eff_site*100:.1f}%")
-        ch2.metric("Net Heat Rate (LHV)", f"{net_hr_lhv:,.0f} Btu/kWh", f"Eff: {net_eff_site*100:.1f}%")
-        st.info(f"**Billing Metric (HHV):** {net_hr_hhv:,.0f} Btu/kWh")
+        st.subheader("🔥 Heat Rate Analysis")
+        st.write(f"**Operating Strategy:** {'BESS Optimized (High Load)' if use_bess else 'Spinning Reserve (Part Load)'}")
         
-        st.markdown(f"**Operating Strategy:** {'BESS Optimized' if use_bess else 'Spinning Reserve'}")
-        st.write(f"• **Fleet Load Factor:** {real_load_factor*100:.1f}%")
-        st.write(f"• **Part-Load Penalty:** {(1-eff_factor)*100:.1f}%")
+        col_a, col_b = st.columns(2)
+        col_a.metric("Gross HR (Engine)", f"{gross_hr_lhv:,.0f}", f"Eff: {gross_eff_site*100:.1f}%")
+        col_b.metric("Net HR (System)", f"{net_hr_lhv:,.0f}", f"Delta: +{net_hr_lhv-gross_hr_lhv:,.0f}")
         
+        st.info(f"**Billing Heat Rate (HHV):** {net_hr_hhv:,.0f} Btu/kWh")
+        
+        st.markdown("---")
+        st.write("**Loss Breakdown:**")
+        st.write(f"• Engines Running: **{n_running}** units")
+        st.write(f"• Total Parasitics: **{total_parasitics_mw:.2f} MW** (Fixed fans/pumps)")
+        st.write(f"• Dist. Losses: **{p_dist_loss:.2f} MW**")
+        
+        if not use_bess:
+            st.warning(f"⚠️ No BESS Penalty: Running {n_running - math.ceil(p_net_gen_req/unit_site_cap)} extra units for spinning reserve increases parasitic load and degrades engine efficiency.")
+
     with col2:
-        st.subheader("Power Balance (PUE)")
+        st.subheader("Power Balance")
         df_bal = pd.DataFrame({
-            "Item": ["Critical IT", "Facility Aux (PUE)", "Dist. Losses", "Gen. Parasitics", "TOTAL GROSS"],
-            "MW": [p_it, (p_total_site_load - p_it), p_dist_loss, (p_gross_req - p_net_gen_req), p_gross_req]
+            "Stage": ["IT Load", "+ Cooling/PUE", "+ Dist. Losses", "= Net Gen Req", "+ Parasitics", "= GROSS GEN"],
+            "MW": [p_it, p_total_site_load-p_it, p_dist_loss, p_net_gen_req, total_parasitics_mw, p_gross_total]
         })
         st.dataframe(df_bal.style.format({"MW": "{:.2f}"}), use_container_width=True)
-        
-        st.subheader("Electrical Sizing")
-        st.write(f"**Operating Voltage:** {op_voltage_kv} kV")
-        st.write(f"**Grid Contribution:** {grid_mva_sc} MVA")
-        st.write(f"**Gen Contribution:** {gen_sc_mva:.1f} MVA (Xd\" {xd_2_pu})")
-        st.markdown(f"**Total Short Circuit:** :red[**{isc_ka:.1f} kA**]")
-        st.success(f"✅ Recommended Switchgear Rating: **{rec_breaker} kA**")
-        
-        # --- NEW SECTION: LOGISTICS SUMMARY IN ENG TAB AS WELL ---
-        if virtual_pipe_mode != "Pipeline":
-            st.divider()
-            st.subheader("🚛 Fuel Logistics & Storage")
-            c_l1, c_l2 = st.columns(2)
-            c_l1.metric("Daily Consumption", logistics_info[0])
-            c_l1.metric("Required Assets", f"{num_tanks_total} Units", tank_description)
-            c_l2.metric("Traffic", f"{logistics_info[2]}")
-            c_l2.metric("Storage CAPEX", f"${fuel_storage_capex:,.0f}")
 
 with t2:
-    c_e1, c_e2 = st.columns(2)
-    with c_e1:
-        st.subheader(f"Fuel Logistics: {virtual_pipe_mode}")
-        if virtual_pipe_mode == "Pipeline":
-            st.metric("Rec. Pipe Diameter", f"{rec_pipe_dia:.0f} inches")
-        elif logistics_info:
-            st.markdown("🛢️ **Fuel Storage Sizing**")
-            st.write(f"**Total Volume:** {logistics_info[0]}")
-            st.info(f"**Required Assets:** {tank_description}")
-            st.write(f"**Logistics:** {logistics_info[2]}")
-            st.caption(f"Est. Mobilization Cost: ${fuel_storage_capex:,.0f} (Included in CAPEX)")
-            st.metric("Est. Storage Area", f"{storage_area_m2:.0f} m²")
-            
-        st.divider()
-        st.subheader("Footprint Estimate")
-        
-        df_foot = pd.DataFrame({
-            "Zone": ["Generation Hall", "Fuel Logistics", "BESS", "Emissions/Urea", "Substation", "Total (+Roads)"],
-            f"Area ({u_as})": [
-                area_gen_total * (10.764 if is_imperial else 1),
-                storage_area_m2 * (10.764 if is_imperial else 1),
-                area_bess_total * (10.764 if is_imperial else 1),
-                area_urea_total * (10.764 if is_imperial else 1),
-                area_sub_total * (10.764 if is_imperial else 1),
-                d_area_s
-            ]
-        })
-        st.dataframe(df_foot.style.format({f"Area ({u_as})": "{:,.0f}"}), use_container_width=True)
-        st.metric("TOTAL LAND REQUIRED", f"{d_area_l:.2f} {u_al}")
-        
-    with c_e2:
-        st.subheader("Emissions & Urea")
-        st.write(f"NOx: {nox_tpy:.0f} Tons/yr")
-        if req_scr:
-            st.warning("SCR Required (Zone Limit Exceeded)")
-            tank_u = math.ceil((urea_vol_yr/365)*urea_days/30000)
-            st.write(f"Urea Tanks: {tank_u}x 30kL")
-            st.write(f"Emissions Setup Cost: ${at_capex_total/1e6:.2f} M")
-        else:
-            st.success("No SCR Required")
-            
-        st.divider()
-        st.subheader("Acoustics")
-        st.write(f"Receiver Noise: **{noise_rec:.1f} dBA**")
-        if noise_rec > noise_limit:
-            st.error(f"Exceeds Limit ({noise_limit} dBA)")
-        else:
-            st.success("Compliant")
+    st.subheader(f"Logistics: {virtual_pipe_mode}")
+    if virtual_pipe_mode != "Pipeline":
+        c_l1, c_l2 = st.columns(2)
+        c_l1.metric("Daily Volume", log_text)
+        c_l1.metric("Assets Req.", f"{num_tanks} Tanks")
+        c_l2.metric("Storage Area", f"{storage_area_m2:.0f} m²")
+        c_l2.metric("Logistics CAPEX", f"${log_capex:,.0f}")
+    else:
+        st.success("Pipeline Connected")
 
 with t3:
-    st.header("💰 Time-to-Market Analysis (Bridge Phase)")
-    
+    st.subheader("Financial Waterfall")
     fig_water = go.Figure(go.Waterfall(
         name = "20", orientation = "v",
         measure = ["relative", "relative", "relative", "total"],
-        x = ["Gross Revenue Gained", "Bridge Energy Premium", "Setup & Mob Cost", "NET BENEFIT"],
+        x = ["Gross Revenue", "Energy Premium", "Mob & Storage Cost", "NET BENEFIT"],
         textposition = "outside",
-        text = [f"+{gross_revenue_gain/1e6:.1f}M", f"-{cost_of_bridge_premium:.1f}M", f"-{capex_setup_m:.1f}M", f"${net_benefit_m:.1f}M"],
-        y = [
-            gross_revenue_gain/1e6, 
-            -cost_of_bridge_premium, 
-            -capex_setup_m,          
-            net_benefit_m
-        ], 
+        text = [f"+{gross_rev/1e6:.1f}M", f"-{cost_energy_prem:.1f}M", f"-{capex_total:.1f}M", f"${net_benefit:.1f}M"],
+        y = [gross_rev/1e6, -cost_energy_prem, -capex_total, net_benefit],
         connector = {"line":{"color":"rgb(63, 63, 63)"}},
     ))
-    fig_water.update_layout(title = f"Value Created by Deploying {months_saved} Months Early", showlegend = False)
     st.plotly_chart(fig_water, use_container_width=True)
-    
-    st.subheader("Cost of Energy Comparison")
-    lcoe_data = pd.DataFrame({
-        "Cost Component": ["Fuel", "Rental (Capacity)", "Variable O&M", "Utility Tariff"],
-        "$/MWh": [fuel_cost_mwh, rental_cost_mwh, var_om, lcoe_utility],
-        "Type": ["Bridge", "Bridge", "Bridge", "Utility"]
-    })
-    fig_lcoe = px.bar(lcoe_data, x="Type", y="$/MWh", color="Cost Component", title="LCOE Composition", text_auto='.1f')
-    st.plotly_chart(fig_lcoe, use_container_width=True)
-
-with t4:
-    st.header("🔮 Post-Grid Strategy (Future Value)")
-    
-    c_b1, c_b2 = st.columns(2)
-    with c_b1:
-        st.subheader("Asset Transfer (Buyout)")
-        st.metric("Est. Buyout Price", f"${buyout_price_m:.1f} M", f"{buyout_pct}% Residual")
-        st.metric("Value of New Plant", f"${total_asset_value_m:.1f} M")
-        st.success(f"**Avoided CAPEX:** ${savings_vs_new:.1f} Million")
-        
-    with c_b2:
-        st.subheader("Virtual Power Plant (VPP)")
-        st.write("Revenue potential if assets are kept for Grid Services:")
-        st.metric("Total VPP Revenue", f"${total_vpp_yr_m:.1f} M/year")
-        st.write(f"• Arbitrage: ${rev_arb/1e6:.1f} M")
-        st.write(f"• Capacity Payments: ${rev_cap/1e6:.1f} M")
 
 # --- FOOTER ---
 st.markdown("---")
-st.caption("CAT Bridge Solutions Designer v24 | Powered by Prime Engineering Engine")
+st.caption("CAT Bridge Solutions Designer v26 | Physics-Based Thermodynamics")
