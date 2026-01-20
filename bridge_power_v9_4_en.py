@@ -6,7 +6,7 @@ import plotly.express as px
 import plotly.graph_objects as go
 
 # --- PAGE CONFIGURATION ---
-st.set_page_config(page_title="CAT Bridge Solutions Designer v34", page_icon="🌉", layout="wide")
+st.set_page_config(page_title="CAT Bridge Solutions Designer v35", page_icon="🌉", layout="wide")
 
 # ==============================================================================
 # 0. HYBRID DATA LIBRARY
@@ -22,7 +22,7 @@ bridge_rental_library = {
         "heat_rate_lhv": 8780,
         "step_load_pct": 25.0, 
         "emissions_nox": 0.5,
-        "default_maint": 5.0, "default_for": 2.0, # Added defaults back
+        "default_maint": 5.0, "default_for": 2.0,
         "est_asset_value_kw": 850.0, "est_mob_kw": 80.0,
         "reactance_xd_2": 0.14
     },
@@ -203,7 +203,6 @@ with st.sidebar:
 
     st.divider()
     
-    # Tech Specs Override
     def_mw = eng_data['iso_rating_mw'][freq_hz]
     unit_size_iso = st.number_input("Unit Prime Rating (ISO MW)", 0.1, 100.0, def_mw, format="%.3f")
     step_load_cap = st.number_input("Unit Step Load Capability (%)", 0.0, 100.0, eng_data['step_load_pct'])
@@ -211,7 +210,6 @@ with st.sidebar:
     st.markdown("⚠️ **Parasitic Load**")
     gen_parasitic_pct = st.number_input("Gen. Parasitic Load (%)", 0.0, 10.0, 2.5) / 100.0
 
-    # --- FIX: RESTORED AVAILABILITY PARAMETERS ---
     st.caption("Availability Parameters (N+M+S)")
     c_r1, c_r2 = st.columns(2)
     maint_outage_pct = c_r1.number_input("Maint. Unavail (%)", 0.0, 20.0, float(eng_data.get('default_maint', 5.0))) / 100.0
@@ -380,7 +378,7 @@ elif virtual_pipe_mode in ["Diesel", "Propane"]:
     storage_area_m2 = num_tanks * tank_area_unit
 
 # --- E. ELECTRICAL SIZING (RESTORED) ---
-grid_connected = True # Assumed from context, can be added back to inputs if needed
+grid_connected = True 
 grid_mva_sc = 500.0 if grid_connected else 0.0 
 xd_pu = eng_data.get('reactance_xd_2', 0.15)
 gen_mva_total = installed_cap_site / 0.8
@@ -486,12 +484,14 @@ with t2:
         
     st.divider()
     st.subheader("Footprint")
-    st.dataframe(pd.DataFrame({
+    col_name = f"Area ({'ft²' if is_imperial else 'm²'})"
+    df_foot = pd.DataFrame({
         "Zone": ["Generation", "Fuel/Logistics", "BESS", "Substation", "Total"],
-        f"Area ({'ft²' if is_imperial else 'm²'})": [
+        col_name: [
             area_gen_total, storage_area_m2, area_bess_total, area_sub_total, total_area_m2
         ]
-    }).style.format("{:,.0f}"), use_container_width=True)
+    })
+    st.dataframe(df_foot.style.format({col_name: "{:,.0f}"}), use_container_width=True)
 
 with t3:
     st.subheader("Financial Waterfall")
@@ -508,4 +508,4 @@ with t3:
 
 # --- FOOTER ---
 st.markdown("---")
-st.caption("CAT Bridge Solutions Designer v34 | Full Engineering Suite")
+st.caption("CAT Bridge Solutions Designer v35 | Full Engineering Suite")
