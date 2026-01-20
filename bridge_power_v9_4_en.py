@@ -6,7 +6,7 @@ import plotly.express as px
 import plotly.graph_objects as go
 
 # --- PAGE CONFIGURATION ---
-st.set_page_config(page_title="CAT Bridge Solutions Designer v35", page_icon="🌉", layout="wide")
+st.set_page_config(page_title="CAT Bridge Solutions Designer v36", page_icon="🌉", layout="wide")
 
 # ==============================================================================
 # 0. HYBRID DATA LIBRARY
@@ -125,7 +125,6 @@ with st.sidebar:
     dc_type_sel = st.selectbox("Data Center Type", ["AI Factory (Training)", "Hyperscale Standard"])
     is_ai = "AI" in dc_type_sel
     
-    # Defaults
     def_step_load = 50.0 if is_ai else 25.0
     def_use_bess = True if is_ai else False
     
@@ -450,6 +449,7 @@ with t1:
         st.subheader("🚜 Fleet Strategy (N+M+S)")
         st.write(f"**Model:** {selected_model}")
         st.write(f"**Site Rating:** {unit_site_cap:.2f} MW")
+        st.write(f"**Avg. Load Factor:** {real_load_factor*100:.1f}%") # ADDED METRIC HERE
         st.markdown("---")
         st.write(f"**N (Running):** {n_running}")
         st.write(f"**M (Maintenance):** {n_maint}")
@@ -484,6 +484,8 @@ with t2:
         
     st.divider()
     st.subheader("Footprint")
+    
+    # FIXED DATAFRAME FORMATTING
     col_name = f"Area ({'ft²' if is_imperial else 'm²'})"
     df_foot = pd.DataFrame({
         "Zone": ["Generation", "Fuel/Logistics", "BESS", "Substation", "Total"],
@@ -491,6 +493,7 @@ with t2:
             area_gen_total, storage_area_m2, area_bess_total, area_sub_total, total_area_m2
         ]
     })
+    # Apply format ONLY to the numeric column
     st.dataframe(df_foot.style.format({col_name: "{:,.0f}"}), use_container_width=True)
 
 with t3:
@@ -508,4 +511,4 @@ with t3:
 
 # --- FOOTER ---
 st.markdown("---")
-st.caption("CAT Bridge Solutions Designer v35 | Full Engineering Suite")
+st.caption("CAT Bridge Solutions Designer v36 | Full Engineering Suite")
