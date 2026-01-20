@@ -6,7 +6,7 @@ import plotly.express as px
 import plotly.graph_objects as go
 
 # --- PAGE CONFIGURATION ---
-st.set_page_config(page_title="CAT Bridge Solutions Designer v22.1", page_icon="🌉", layout="wide")
+st.set_page_config(page_title="CAT Bridge Solutions Designer v23", page_icon="🌉", layout="wide")
 
 # ==============================================================================
 # 0. HYBRID DATA LIBRARY
@@ -153,7 +153,7 @@ else:
     u_press = "Bar"
 
 t = {
-    "title": f"🌉 CAT Bridge Solutions Designer v22.1 ({freq_hz}Hz)",
+    "title": f"🌉 CAT Bridge Solutions Designer v23 ({freq_hz}Hz)",
     "subtitle": "**Time-to-Market Accelerator.**\nEngineering, Logistics & Financial Strategy for Bridge Power.",
     "sb_1": "1. Data Center Profile",
     "sb_2": "2. Technology & Fuel",
@@ -224,7 +224,8 @@ with st.sidebar:
         methane_number = st.number_input("Methane Number (MN)", 30, 100, 80)
         gas_source = st.radio("Supply Method", ["Pipeline", "Virtual Pipeline (LNG)", "Virtual Pipeline (CNG)"])
         
-        if "Pipeline" in gas_source:
+        # --- LOGIC FIX: CHECK EXACT MATCH FIRST ---
+        if gas_source == "Pipeline":
             virtual_pipe_mode = "Pipeline"
         elif "LNG" in gas_source:
             virtual_pipe_mode = "LNG"
@@ -749,4 +750,4 @@ with t4:
 
 # --- FOOTER ---
 st.markdown("---")
-st.caption("CAT Bridge Solutions Designer v22.1 | Powered by Prime Engineering Engine")
+st.caption("CAT Bridge Solutions Designer v23 | Powered by Prime Engineering Engine")
