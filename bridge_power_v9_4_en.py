@@ -6,7 +6,7 @@ import plotly.express as px
 import plotly.graph_objects as go
 
 # --- PAGE CONFIGURATION ---
-st.set_page_config(page_title="CAT Bridge Solutions Designer v28", page_icon="🌉", layout="wide")
+st.set_page_config(page_title="CAT Bridge Solutions Designer v29 (Prime Algo)", page_icon="🌉", layout="wide")
 
 # ==============================================================================
 # 0. HYBRID DATA LIBRARY
@@ -242,7 +242,7 @@ with st.sidebar:
     vpp_cap_pay = 28000.0
 
 # ==============================================================================
-# 2. CALCULATION ENGINE (PHYSICS & THERMODYNAMICS)
+# 2. CALCULATION ENGINE (PRIME ALGORITHM)
 # ==============================================================================
 
 # A. BASE LOADS
@@ -250,31 +250,71 @@ p_total_site_load = p_it * pue_input
 p_dist_loss = p_total_site_load * dist_loss_pct
 p_net_gen_req = p_total_site_load + p_dist_loss # Power required at Gen Bus
 
-# B. FLEET SIZING & OPERATING POINT
+# B. FLEET SIZING - THE PRIME ALGORITHM
 unit_site_cap = unit_size_iso * derate_factor_calc
 step_mw_req_site = p_it * (step_load_req / 100.0)
 
-# --- CRITICAL LOGIC: N_RUNNING & LOAD FACTOR ---
+# Variables for Engineering Dashboard
+driver_txt = "N/A"
+n_steady = 0
+n_transient = 0
+n_headroom = 0
+
 if use_bess:
-    target_load_factor = 0.95 
-    n_base_mw = p_net_gen_req / (1 - gen_parasitic_pct) 
-    n_running = math.ceil(n_base_mw / (unit_site_cap * target_load_factor))
-    bess_power = max(step_mw_req_site, unit_site_cap) 
-    bess_energy = bess_power * 2 
-else:
-    n_min = math.ceil(p_net_gen_req / unit_site_cap)
-    n_running = n_min
-    while True:
-        total_cap_mw = n_running * unit_site_cap
-        total_parasitics_mw = n_running * (unit_size_iso * gen_parasitic_pct) 
-        gross_load_needed = p_net_gen_req + total_parasitics_mw
-        headroom_mw = total_cap_mw - gross_load_needed
-        step_capacity_mw = total_cap_mw * (step_load_cap / 100.0)
-        
-        if headroom_mw >= step_mw_req_site and step_capacity_mw >= step_mw_req_site:
-            break
-        n_running += 1
+    # BESS Strategy: BESS takes the hit. Engines run purely for load.
+    # Target Load Factor: 95% (Sweet Spot)
+    # Solve for N:  (N * Unit * 0.95) - (N * Unit * Parasitic%) = Net_Load
+    # N * Unit * (0.95 - Parasitic%) = Net_Load
+    effective_capacity = unit_site_cap * (0.95 - gen_parasitic_pct)
+    n_running = math.ceil(p_net_gen_req / effective_capacity)
     
+    bess_power = max(step_mw_req_site, unit_site_cap)
+    bess_energy = bess_power * 2
+    driver_txt = "Steady State (BESS Optimized)"
+else:
+    # PRIME ALGORITHM: NO BESS
+    # We must solve for N iteratively because Parasitics depend on N.
+    # We assume N starts at minimum and increments until all 3 Vectors are satisfied.
+    
+    n_running = math.ceil(p_net_gen_req / unit_site_cap) # Initial guess
+    
+    while True:
+        # 1. Calculate Real Physics for current N
+        total_parasitics_mw = n_running * (unit_size_iso * gen_parasitic_pct) # Fixed load per unit
+        p_gross_needed = p_net_gen_req + total_parasitics_mw
+        total_gross_cap = n_running * unit_site_cap
+        
+        # 2. VECTOR A: Steady State Capacity
+        # Do we have enough gross cap to cover load + parasitics?
+        is_steady_ok = total_gross_cap >= p_gross_needed
+        
+        # 3. VECTOR B: Transient Stiffness (Step Capability)
+        # Can the running fleet accept the step MW without tripping?
+        # Fleet Step Cap = N * Unit_Cap * Step_%
+        fleet_step_cap = total_gross_cap * (step_load_cap / 100.0)
+        is_transient_ok = fleet_step_cap >= step_mw_req_site
+        
+        # 4. VECTOR C: Spinning Reserve (Headroom)
+        # Is there enough empty space to fit the step?
+        # Empty Space = Total Cap - Current Load
+        available_headroom = total_gross_cap - p_gross_needed
+        is_headroom_ok = available_headroom >= step_mw_req_site
+        
+        if is_steady_ok and is_transient_ok and is_headroom_ok:
+            # Determine Driver for Dashboard display
+            if fleet_step_cap < (step_mw_req_site * 1.1): # Close call on Transient
+                driver_txt = "Transient Stiffness (Step %)"
+            elif available_headroom < (step_mw_req_site * 1.1):
+                driver_txt = "Spinning Reserve (Headroom)"
+            else:
+                driver_txt = "Steady State Load"
+            break
+        
+        n_running += 1
+        
+        if n_running > 200: # Safety break
+            break
+            
     bess_power = 0; bess_energy = 0
 
 # --- C. THERMODYNAMICS & EFFICIENCY ---
@@ -295,10 +335,9 @@ else:
 gross_eff_site = base_eff * eff_factor
 gross_hr_lhv = 3412.14 / gross_eff_site
 
-# --- FIX: NET HR CALCULATION (USEFUL LOAD) ---
-# Fuel Input = Gross Gen * Gross HR
+# NET HR = Fuel (Btu) / Useful Load (IT + Cooling)
+# Excludes Distribution losses from the denominator to penalize them
 total_fuel_input_mmbtu = p_gross_total * (gross_hr_lhv / 1e6) 
-# Net HR = Total Fuel / Useful Facility Load (Excluding Losses)
 net_hr_lhv = (total_fuel_input_mmbtu * 1e6) / p_total_site_load
 
 # HHV Conversion
@@ -315,7 +354,7 @@ installed_cap_site = n_total * unit_site_cap
 # --- D. LOGISTICS ---
 total_mmbtu_day = total_fuel_input_mmbtu * 24
 
-# Initializing vars to prevent NameError
+# Initializing vars
 num_tanks = 0; log_capex = 0; log_text = "Pipeline"; storage_area_m2 = 0 
 
 if virtual_pipe_mode == "LNG":
@@ -342,7 +381,7 @@ elif virtual_pipe_mode in ["Diesel", "Propane"]:
 gen_mwh_yr = p_gross_total * 8760
 fuel_cost_mwh = (net_hr_lhv / 1e6) * fuel_price_mmbtu * 1000
 
-rental_cost_yr = (n_running * unit_site_cap) * cap_charge * 12
+rental_cost_yr = installed_cap_site * cap_charge * 12
 rental_cost_mwh = rental_cost_yr / (p_net_gen_req * 8760)
 var_om = 21.5
 lcoe_bridge = fuel_cost_mwh + rental_cost_mwh + var_om
@@ -358,8 +397,8 @@ net_benefit = (gross_rev/1e6) - cost_energy_prem - capex_total
 # ==============================================================================
 
 c1, c2, c3, c4 = st.columns(4)
-c1.metric("Net Capacity (IT)", f"{p_it:.1f} MW", f"Gross Needed: {p_gross_total:.1f} MW")
-c2.metric("Net Heat Rate (LHV)", f"{net_hr_lhv:,.0f} Btu/kWh", f"Load Factor: {real_load_factor*100:.1f}%")
+c1.metric("Bridge Capacity", f"{p_net_gen_req:.1f} MW", f"IT Load: {p_it:.1f} MW")
+c2.metric("Fleet Configuration", f"{n_total} Units", f"Run: {n_running} | Driver: {driver_txt}")
 c3.metric("LCOE (Bridge)", f"${lcoe_bridge:.2f}/MWh", f"Fuel: ${fuel_cost_mwh:.2f}")
 c4.metric("Net Benefit", f"${net_benefit:.1f} M", f"Saved: {months_saved} Mo")
 
@@ -372,21 +411,23 @@ with t1:
     with col1:
         st.subheader("🔥 Heat Rate Analysis")
         st.write(f"**Operating Strategy:** {'BESS Optimized (High Load)' if use_bess else 'Spinning Reserve (Part Load)'}")
+        st.write(f"**Sizing Driver:** {driver_txt}")
         
         col_a, col_b = st.columns(2)
         col_a.metric("Gross HR (Engine)", f"{gross_hr_lhv:,.0f}", f"Eff: {gross_eff_site*100:.1f}%")
-        col_b.metric("Net HR (Useful Load)", f"{net_hr_lhv:,.0f}", f"Delta: +{net_hr_lhv-gross_hr_lhv:,.0f}")
+        col_b.metric("Net HR (System)", f"{net_hr_lhv:,.0f}", f"Delta: +{net_hr_lhv-gross_hr_lhv:,.0f}")
         
         st.info(f"**Billing Heat Rate (HHV):** {net_hr_hhv:,.0f} Btu/kWh")
         
         st.markdown("---")
         st.write("**Loss Breakdown:**")
         st.write(f"• Engines Running: **{n_running}** units")
-        st.write(f"• Total Parasitics: **{total_parasitics_mw:.2f} MW** (Fixed fans/pumps)")
+        st.write(f"• Load Factor: **{real_load_factor*100:.1f}%**")
+        st.write(f"• Total Parasitics: **{total_parasitics_mw:.2f} MW** (Fixed per unit)")
         st.write(f"• Dist. Losses: **{p_dist_loss:.2f} MW**")
         
-        if not use_bess:
-            st.warning(f"⚠️ No BESS Penalty: Running {n_running - math.ceil(p_net_gen_req/unit_site_cap)} extra units for spinning reserve increases parasitic load and degrades engine efficiency.")
+        if not use_bess and real_load_factor < 0.75:
+            st.warning(f"⚠️ **Efficiency Penalty:** Low load factor ({real_load_factor*100:.1f}%) required for Spinning Reserve is increasing Fuel Consumption.")
 
     with col2:
         st.subheader("Power Balance")
@@ -422,4 +463,4 @@ with t3:
 
 # --- FOOTER ---
 st.markdown("---")
-st.caption("CAT Bridge Solutions Designer v28 | Physics-Based Thermodynamics")
+st.caption("CAT Bridge Solutions Designer v29 | Powered by Prime Engineering Engine")
