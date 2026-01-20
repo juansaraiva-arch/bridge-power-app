@@ -18,7 +18,7 @@ bridge_rental_library = {
         "description": "Gas Rental Unit (G3516H) - High Efficiency",
         "fuels": ["Natural Gas"],
         "type": "High Speed",
-        "iso_rating_mw": {60: 1.9, 50: 1.9}, # Same rating both freqs
+        "iso_rating_mw": {60: 1.9, 50: 1.9}, 
         "electrical_efficiency": 0.392,
         "heat_rate_lhv": 8780,
         "step_load_pct": 40.0,
@@ -31,9 +31,9 @@ bridge_rental_library = {
     },
     "TM2500": {
         "description": "Mobile Gas Turbine (34 MW) - Aero",
-        "fuels": ["Natural Gas", "Diesel"], # Dual Fuel
+        "fuels": ["Natural Gas", "Diesel"], 
         "type": "Gas Turbine",
-        "iso_rating_mw": {60: 34.0, 50: 34.0}, # Usually geared
+        "iso_rating_mw": {60: 34.0, 50: 34.0}, 
         "electrical_efficiency": 0.370,
         "heat_rate_lhv": 9220,
         "step_load_pct": 20.0,
@@ -46,7 +46,7 @@ bridge_rental_library = {
     },
     "SMT60": {
         "description": "Solar Mobile (Taurus 60) - Dual Fuel",
-        "fuels": ["Natural Gas", "Diesel", "Propane"], # Adding Propane capability for demo
+        "fuels": ["Natural Gas", "Diesel", "Propane"], 
         "type": "Gas Turbine",
         "iso_rating_mw": {60: 5.7, 50: 5.5}, 
         "electrical_efficiency": 0.315,
@@ -239,6 +239,12 @@ with st.sidebar:
         hr_btu_kwh = hr_user
 
     step_load_cap = st.number_input("Unit Step Load Capability (%)", 0.0, 100.0, eng_data['step_load_pct'])
+    
+    # --- HERE IS THE FIX: Ensure maint_outage_pct is defined ---
+    c_r1, c_r2 = st.columns(2)
+    maint_outage_pct = c_r1.number_input("Maint. Unavail (%)", 0.0, 20.0, float(eng_data.get('default_maint', 5.0))) / 100.0
+    forced_outage_pct = c_r2.number_input("Forced Outage Rate (%)", 0.0, 20.0, float(eng_data.get('default_for', 2.0))) / 100.0
+    
     gen_parasitic_pct = st.number_input("Gen. Parasitic Load (%)", 0.0, 10.0, 2.5) / 100.0
 
     st.divider()
