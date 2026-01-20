@@ -6,7 +6,7 @@ import plotly.express as px
 import plotly.graph_objects as go
 
 # --- PAGE CONFIGURATION ---
-st.set_page_config(page_title="CAT Bridge Solutions Designer v31", page_icon="🌉", layout="wide")
+st.set_page_config(page_title="CAT Bridge Solutions Designer v33", page_icon="🌉", layout="wide")
 
 # ==============================================================================
 # 0. HYBRID DATA LIBRARY
@@ -68,7 +68,7 @@ bridge_rental_library = {
         "iso_rating_mw": {60: 1.825, 50: 1.6}, 
         "electrical_efficiency": 0.380, 
         "heat_rate_lhv": 9000,
-        "step_load_pct": 80.0,
+        "step_load_pct": 80.0, 
         "emissions_nox": 0.6,
         "est_asset_value_kw": 600.0, "est_mob_kw": 50.0,
         "reactance_xd_2": 0.13
@@ -84,23 +84,11 @@ bridge_rental_library = {
         "emissions_nox": 4.0,
         "est_asset_value_kw": 550.0, "est_mob_kw": 50.0,
         "reactance_xd_2": 0.14
-    },
-    "XQ1140": {
-        "description": "Diesel Rental Set (C32) - Compact",
-        "fuels": ["Diesel"],
-        "type": "High Speed",
-        "iso_rating_mw": {60: 0.91, 50: 0.8}, 
-        "electrical_efficiency": 0.360,
-        "heat_rate_lhv": 9480,
-        "step_load_pct": 100.0,
-        "emissions_nox": 4.0,
-        "est_asset_value_kw": 500.0, "est_mob_kw": 40.0,
-        "reactance_xd_2": 0.12
     }
 }
 
 # ==============================================================================
-# 1. INPUTS (SIDEBAR)
+# 1. SIDEBAR INPUTS
 # ==============================================================================
 
 with st.sidebar:
@@ -118,14 +106,15 @@ with st.sidebar:
     dc_type_sel = st.selectbox("Data Center Type", ["AI Factory (Training)", "Hyperscale Standard"])
     is_ai = "AI" in dc_type_sel
     
-    def_step_load = 40.0 if is_ai else 10.0
+    # Defaults
+    def_step_load = 50.0 if is_ai else 25.0
     def_use_bess = True if is_ai else False
     
     p_it = st.number_input("Critical IT Load (MW)", 1.0, 1000.0, 50.0, step=10.0)
     pue_input = st.number_input("Design PUE", 1.0, 2.0, 1.35, step=0.01)
     
     avail_req = st.number_input("Availability Target (%)", 90.0, 99.99999, 99.99, format="%.5f")
-    step_load_req = st.number_input("Expected Step Load (%)", 0.0, 100.0, def_step_load)
+    step_load_req = st.number_input("Block Load / Step Req (%)", 0.0, 100.0, def_step_load, help="% of IT load that hits instantly")
     dist_loss_pct = st.number_input("Distribution Losses (%)", 0.0, 10.0, 1.0) / 100.0
 
     st.divider()
@@ -241,19 +230,18 @@ with st.sidebar:
     vpp_cap_pay = 28000.0
 
 # ==============================================================================
-# 2. CALCULATION ENGINE (PRIME ALGORITHM v2)
+# 2. CALCULATION ENGINE (PRIME ALGORITHM v3 - AGGRESSIVE)
 # ==============================================================================
 
 # A. BASE LOADS
 p_total_site_load = p_it * pue_input
 p_dist_loss = p_total_site_load * dist_loss_pct
-p_net_gen_req = p_total_site_load + p_dist_loss # Power required at Gen Bus
+p_net_gen_req = p_total_site_load + p_dist_loss 
 
 # B. FLEET SIZING - THE PRIME ALGORITHM (Strict G2/G3 Constraints)
 unit_site_cap = unit_size_iso * derate_factor_calc
 step_mw_req_site = p_it * (step_load_req / 100.0)
 
-# Dashboard Vars
 driver_txt = "N/A"
 n_steady = 0
 n_transient = 0
@@ -269,14 +257,16 @@ if use_bess:
     bess_energy = bess_power * 2
     driver_txt = "Steady State (BESS Optimized)"
 else:
-    # NO BESS
-    n_steady = math.ceil(p_net_gen_req / (unit_site_cap * 0.90)) 
+    # NO BESS - HARD CONSTRAINTS
+    # 1. Steady State
+    n_steady = math.ceil(p_net_gen_req / (unit_site_cap * 0.90))
     
-    # Transient Stiffness
+    # 2. Transient Stiffness (The Prime Killer for Gas)
+    # Total Fleet Step Cap must >= Step Requirement
     unit_step_mw_cap = unit_site_cap * (step_load_cap / 100.0)
     n_transient = math.ceil(step_mw_req_site / unit_step_mw_cap)
     
-    # Headroom
+    # 3. Headroom
     n_headroom = n_steady
     while True:
         total_cap = n_headroom * unit_site_cap
@@ -294,44 +284,49 @@ else:
             
     bess_power = 0; bess_energy = 0
 
-# --- C. THERMODYNAMICS & EFFICIENCY ---
+# --- FLEET STRATEGY RESTORED ---
+n_maint = math.ceil(n_running * maint_outage_pct) 
+n_forced_buffer = math.ceil(n_running * forced_outage_pct) 
+n_reserve = max(n_forced_buffer, 1) # Standard logic for Tier 1-2
+if avail_req > 99.99: n_reserve = max(n_reserve, 2) # Tier 4 check
+
+n_total = n_running + n_maint + n_reserve
+installed_cap_site = n_total * unit_site_cap
+
+# --- C. THERMODYNAMICS & EFFICIENCY (AGGRESSIVE CURVE) ---
 total_parasitics_mw = n_running * (unit_size_iso * gen_parasitic_pct)
 p_gross_total = p_net_gen_req + total_parasitics_mw
 real_load_factor = p_gross_total / (n_running * unit_site_cap)
 
-# Part-Load Efficiency Correction
+# Efficiency Curve Correction
 base_eff = eng_data['electrical_efficiency']
 type_tech = bridge_rental_library[selected_model].get('type', 'High Speed')
 
 if type_tech == "High Speed": 
+    # Recip Engine Curve (Aggressive drop below 60%)
     if real_load_factor >= 0.75: 
         eff_factor = 1.0
     elif real_load_factor >= 0.50:
-        eff_factor = 1.0 - (0.5 * (0.75 - real_load_factor)**1.5)
+        eff_factor = 0.85 + (0.6 * (real_load_factor - 0.50)) 
     else:
-        eff_factor = 0.90 - (1.2 * (0.50 - real_load_factor))
+        eff_factor = 0.65 + (1.0 * (real_load_factor - 0.30))
 else: 
-    eff_factor = 1.0 - (0.7 * (1.0 - real_load_factor))
+    # Turbine: Linear but steep drop
+    eff_factor = 1.0 - (0.8 * (1.0 - real_load_factor))
 
-# Clamp factor
-eff_factor = max(eff_factor, 0.50)
+eff_factor = max(eff_factor, 0.50) # Floor
 
 gross_eff_site = base_eff * eff_factor
 gross_hr_lhv = 3412.14 / gross_eff_site
 
-# NET HR = Fuel / Useful Load
+# NET HR = Total Fuel Input / USEFUL Load (IT + Cooling)
+# Penalizes both Engine Efficiency (Numerator goes up) AND Parasitics/Losses (Denominator is fixed)
 total_fuel_input_mmbtu = p_gross_total * (gross_hr_lhv / 1e6) 
 net_hr_lhv = (total_fuel_input_mmbtu * 1e6) / p_total_site_load
 
+# HHV Conversion
 hhv_factor = 1.108 if fuel_type_sel == "Natural Gas" else (1.06 if fuel_type_sel == "Diesel" else 1.09)
 net_hr_hhv = net_hr_lhv * hhv_factor
-
-n_maint = math.ceil(n_running * 0.05) 
-n_forced_buffer = math.ceil(n_running * 0.02) 
-n_reserve = max(n_forced_buffer, 1) 
-
-n_total = n_running + n_maint + n_reserve
-installed_cap_site = n_total * unit_site_cap
 
 # --- D. LOGISTICS ---
 total_mmbtu_day = total_fuel_input_mmbtu * 24
@@ -358,11 +353,29 @@ elif virtual_pipe_mode in ["Diesel", "Propane"]:
     log_text = f"{virtual_pipe_mode}: {vol_day:,.0f} gpd"
     storage_area_m2 = num_tanks * tank_area_unit
 
-# --- E. FINANCIALS ---
+# --- E. ELECTRICAL SIZING (RESTORED) ---
+grid_mva_sc = 500.0 if grid_connected else 0.0 # simplified logic, usually from input
+xd_pu = eng_data.get('reactance_xd_2', 0.15)
+gen_mva_total = installed_cap_site / 0.8
+gen_sc_mva = gen_mva_total / xd_pu
+total_sc_mva = gen_sc_mva + grid_mva_sc
+
+# Voltage Logic
+if is_50hz:
+    op_voltage_kv = 11.0 if p_gross_total < 35 else 33.0
+else:
+    op_voltage_kv = 13.8 if p_gross_total < 45 else 34.5
+
+isc_ka = total_sc_mva / (math.sqrt(3) * op_voltage_kv)
+rec_breaker = 63
+for b in [25, 31.5, 40, 50, 63]:
+    if b > (isc_ka * 1.1): rec_breaker = b; break
+
+# --- F. FINANCIALS ---
 gen_mwh_yr = p_gross_total * 8760
 fuel_cost_mwh = (net_hr_lhv / 1e6) * fuel_price_mmbtu * 1000
 
-rental_cost_yr = installed_cap_site * cap_charge * 12
+rental_cost_yr = (n_running * unit_site_cap) * cap_charge * 12
 rental_cost_mwh = rental_cost_yr / (p_net_gen_req * 8760)
 var_om = 21.5
 lcoe_bridge = fuel_cost_mwh + rental_cost_mwh + var_om
@@ -379,47 +392,53 @@ net_benefit = (gross_rev/1e6) - cost_energy_prem - capex_total
 
 c1, c2, c3, c4 = st.columns(4)
 c1.metric("Bridge Capacity", f"{p_net_gen_req:.1f} MW", f"IT Load: {p_it:.1f} MW")
-c2.metric("Fleet Configuration", f"{n_total} Units", f"Run: {n_running} | Driver: {driver_txt}")
+c2.metric("Net Heat Rate (LHV)", f"{net_hr_lhv:,.0f} Btu/kWh", f"LF: {real_load_factor*100:.1f}%")
 c3.metric("LCOE (Bridge)", f"${lcoe_bridge:.2f}/MWh", f"Fuel: ${fuel_cost_mwh:.2f}")
 c4.metric("Net Benefit", f"${net_benefit:.1f} M", f"Saved: {months_saved} Mo")
 
 st.divider()
 
-t1, t2, t3 = st.tabs(["⚙️ Thermodynamics", "🏗️ Logistics & Site", "💰 Business Case"])
+t1, t2, t3 = st.tabs(["⚙️ Engineering & Fleet", "🏗️ Logistics & Site", "💰 Business Case"])
 
 with t1:
-    col1, col2 = st.columns(2)
+    col1, col2, col3 = st.columns(3)
+    
     with col1:
         st.subheader("🔥 Heat Rate Analysis")
-        st.write(f"**Operating Strategy:** {'BESS Optimized (High Load)' if use_bess else 'Spinning Reserve (Part Load)'}")
-        st.write(f"**Sizing Driver:** {driver_txt}")
+        st.write(f"**Strategy:** {'BESS Optimized' if use_bess else 'Spinning Reserve'}")
+        st.write(f"**Driver:** {driver_txt}")
         
-        col_a, col_b = st.columns(2)
-        col_a.metric("Gross HR (Engine)", f"{gross_hr_lhv:,.0f}", f"Eff: {gross_eff_site*100:.1f}%")
-        col_b.metric("Net HR (Useful Load)", f"{net_hr_lhv:,.0f}", f"Delta: +{net_hr_lhv-gross_hr_lhv:,.0f}")
+        st.metric("Gross HR (Engine)", f"{gross_hr_lhv:,.0f}", f"Eff: {gross_eff_site*100:.1f}%")
+        st.metric("Net HR (System)", f"{net_hr_lhv:,.0f}", f"Delta: +{net_hr_lhv-gross_hr_lhv:,.0f}")
+        st.info(f"**HHV (Billing):** {net_hr_hhv:,.0f} Btu/kWh")
         
-        st.info(f"**Billing Heat Rate (HHV):** {net_hr_hhv:,.0f} Btu/kWh")
+        if not use_bess and real_load_factor < 0.50:
+            st.error(f"⛔ **CRITICAL:** RICE LF {real_load_factor*100:.1f}% < 50%. Wet Stacking Risk.")
+
+    with col2:
+        st.subheader("🚜 Fleet Strategy (N+M+S)")
+        st.write(f"**Model:** {selected_model}")
+        st.write(f"**Site Rating:** {unit_site_cap:.2f} MW")
+        st.markdown("---")
+        st.write(f"**N (Running):** {n_running}")
+        st.write(f"**M (Maintenance):** {n_maint}")
+        st.write(f"**S (Standby):** {n_reserve}")
+        st.metric("Total Fleet", f"{n_total} Units", f"{installed_cap_site:.1f} MW Total")
+        
+        if use_bess:
+            st.info(f"⚡ **BESS:** {bess_power:.1f} MW / {bess_energy:.1f} MWh")
+
+    with col3:
+        st.subheader("⚡ Electrical Sizing")
+        st.write(f"**Voltage:** {op_voltage_kv} kV")
+        st.write(f"**Gen Contribution:** {gen_sc_mva:.1f} MVA")
+        st.metric("Total Short Circuit", f"{isc_ka:.1f} kA")
+        st.success(f"✅ Breaker: **{rec_breaker} kA**")
         
         st.markdown("---")
         st.write("**Loss Breakdown:**")
-        st.write(f"• Engines Running: **{n_running}** units")
-        st.write(f"• Load Factor: **{real_load_factor*100:.1f}%**")
-        st.write(f"• Total Parasitics: **{total_parasitics_mw:.2f} MW** (Fixed per unit)")
-        st.write(f"• Dist. Losses: **{p_dist_loss:.2f} MW**")
-        
-        # --- CRITICAL RICE WARNING (v31) ---
-        if type_tech == "High Speed" and real_load_factor < 0.50:
-            st.error(f"⛔ **CRITICAL ALERT:** RICE Generators operating at {real_load_factor*100:.1f}%. Operation below 50% causes wet stacking and engine damage. Increase load or use BESS.")
-        elif not use_bess and real_load_factor < 0.75:
-            st.warning(f"⚠️ **Efficiency Penalty:** Low load factor ({real_load_factor*100:.1f}%) increases Fuel Consumption.")
-
-    with col2:
-        st.subheader("Power Balance")
-        df_bal = pd.DataFrame({
-            "Stage": ["IT Load", "+ Cooling/PUE", "+ Dist. Losses", "= Net Gen Req", "+ Parasitics", "= GROSS GEN"],
-            "MW": [p_it, p_total_site_load-p_it, p_dist_loss, p_net_gen_req, total_parasitics_mw, p_gross_total]
-        })
-        st.dataframe(df_bal.style.format({"MW": "{:.2f}"}), use_container_width=True)
+        st.write(f"• Parasitics: {total_parasitics_mw:.2f} MW")
+        st.write(f"• Dist. Loss: {p_dist_loss:.2f} MW")
 
 with t2:
     st.subheader(f"Logistics: {virtual_pipe_mode}")
@@ -431,6 +450,15 @@ with t2:
         c_l2.metric("Logistics CAPEX", f"${log_capex:,.0f}")
     else:
         st.success("Pipeline Connected")
+        
+    st.divider()
+    st.subheader("Footprint")
+    st.dataframe(pd.DataFrame({
+        "Zone": ["Generation", "Fuel/Logistics", "BESS", "Substation", "Total"],
+        f"Area ({'ft²' if is_imperial else 'm²'})": [
+            area_gen_total, storage_area_m2, area_bess_total, area_sub_total, total_area_m2
+        ]
+    }).style.format("{:,.0f}"), use_container_width=True)
 
 with t3:
     st.subheader("Financial Waterfall")
@@ -447,4 +475,4 @@ with t3:
 
 # --- FOOTER ---
 st.markdown("---")
-st.caption("CAT Bridge Solutions Designer v31 | Powered by Prime Engineering Engine")
+st.caption("CAT Bridge Solutions Designer v33 | Full Engineering Suite")
