@@ -6,11 +6,10 @@ import plotly.express as px
 import plotly.graph_objects as go
 
 # --- PAGE CONFIGURATION ---
-st.set_page_config(page_title="CAT Bridge Solutions Designer v12", page_icon="🌉", layout="wide")
+st.set_page_config(page_title="CAT Bridge Solutions Designer v13", page_icon="🌉", layout="wide")
 
 # ==============================================================================
 # 0. HYBRID DATA LIBRARY (RENTAL FLEET: GAS, DIESEL & DUAL FUEL)
-# Fuentes: Hojas Técnicas LEHX + Solar Turbines SMT
 # ==============================================================================
 
 bridge_rental_library = {
@@ -19,29 +18,31 @@ bridge_rental_library = {
         "description": "Gas Rental Unit (G3516H) - High Efficiency",
         "fuels": ["Natural Gas"],
         "type": "High Speed",
-        "iso_rating_mw": {60: 1.9, 50: 1.9}, # Valid for both freq
+        "iso_rating_mw": {60: 1.9, 50: 1.9}, 
         "electrical_efficiency": 0.392,
         "heat_rate_lhv": 8780,
         "step_load_pct": 40.0,
         "emissions_nox": 0.5,
+        "emissions_co": 2.5,
         "default_for": 2.0, "default_maint": 5.0,
-        "est_asset_value_kw": 850.0, # Value for Buyout
-        "est_mob_kw": 80.0,          # Mobilization Cost (Transport + Crane)
+        "est_asset_value_kw": 850.0, 
+        "est_mob_kw": 80.0,
         "gas_pressure_min_psi": 1.5,
         "reactance_xd_2": 0.14
     },
     "TM2500": {
         "description": "Mobile Gas Turbine (34 MW) - Aero",
-        "fuels": ["Natural Gas", "Diesel"], # Dual Fuel
+        "fuels": ["Natural Gas", "Diesel"], 
         "type": "Gas Turbine",
         "iso_rating_mw": {60: 34.0, 50: 34.0}, 
         "electrical_efficiency": 0.370,
         "heat_rate_lhv": 9220,
         "step_load_pct": 20.0,
         "emissions_nox": 0.6,
+        "emissions_co": 0.6,
         "default_for": 1.5, "default_maint": 3.0,
         "est_asset_value_kw": 900.0,
-        "est_mob_kw": 120.0,         # Higher mob complexity
+        "est_mob_kw": 120.0,
         "gas_pressure_min_psi": 450.0,
         "reactance_xd_2": 0.17
     },
@@ -54,9 +55,10 @@ bridge_rental_library = {
         "heat_rate_lhv": 10830,
         "step_load_pct": 20.0,
         "emissions_nox": 0.6,
+        "emissions_co": 0.6,
         "default_for": 1.0, "default_maint": 2.0,
         "est_asset_value_kw": 950.0,
-        "est_mob_kw": 60.0,          # Fast setup
+        "est_mob_kw": 60.0,
         "gas_pressure_min_psi": 250.0,
         "reactance_xd_2": 0.18
     },
@@ -69,6 +71,7 @@ bridge_rental_library = {
         "heat_rate_lhv": 9630,
         "step_load_pct": 20.0,
         "emissions_nox": 0.6,
+        "emissions_co": 0.6,
         "default_for": 1.0, "default_maint": 2.0,
         "est_asset_value_kw": 900.0,
         "est_mob_kw": 70.0,
@@ -86,9 +89,10 @@ bridge_rental_library = {
         "heat_rate_lhv": 9000,
         "step_load_pct": 80.0,
         "emissions_nox": 0.6,
+        "emissions_co": 0.1,
         "default_for": 1.0, "default_maint": 4.0,
         "est_asset_value_kw": 600.0,
-        "est_mob_kw": 50.0,          # Very easy to deploy
+        "est_mob_kw": 50.0,
         "gas_pressure_min_psi": 0,
         "reactance_xd_2": 0.13
     },
@@ -101,6 +105,7 @@ bridge_rental_library = {
         "heat_rate_lhv": 9100,
         "step_load_pct": 75.0,
         "emissions_nox": 4.0,
+        "emissions_co": 1.0,
         "default_for": 1.5, "default_maint": 4.0,
         "est_asset_value_kw": 550.0,
         "est_mob_kw": 50.0,
@@ -135,14 +140,14 @@ else:
     u_press = "Bar"
 
 t = {
-    "title": f"🌉 CAT Bridge Solutions Designer v12 ({freq_hz}Hz)",
+    "title": f"🌉 CAT Bridge Solutions Designer v13 ({freq_hz}Hz)",
     "subtitle": "**Time-to-Market Accelerator.**\nEngineering, Logistics & Financial Strategy for Bridge Power.",
     "sb_1": "1. Data Center Profile",
     "sb_2": "2. Technology & Fuel",
     "sb_3": "3. Site, Logistics & Noise",
     "sb_4": "4. Strategy (BESS & LNG)",
     "sb_5": "5. Cooling & Env",
-    "sb_6": "6. Business & Time-to-Market"
+    "sb_6": "6. Business & Future Value"
 }
 
 st.title(t["title"])
@@ -162,13 +167,10 @@ with st.sidebar:
     def_use_bess = True if is_ai else False
     
     p_it = st.number_input("Critical IT Load (MW)", 1.0, 1000.0, 50.0, step=10.0)
-    # PRIME LOGIC: PUE
     pue_input = st.number_input("Design PUE", 1.0, 2.0, 1.35, step=0.01)
     
     avail_req = st.number_input("Availability Target (%)", 90.0, 99.99999, 99.99, format="%.5f")
     step_load_req = st.number_input("Expected Step Load (%)", 0.0, 100.0, def_step_load)
-    
-    # PRIME LOGIC: Distribution Losses
     dist_loss_pct = st.number_input("Distribution Losses (%)", 0.0, 10.0, 1.0) / 100.0
 
     st.divider()
@@ -323,11 +325,32 @@ with st.sidebar:
     # --- 4. STRATEGY ---
     st.header(t["sb_4"])
     use_bess = st.checkbox("Include BESS", value=def_use_bess)
+    
+    # LNG Logic
+    include_lng = False
+    if not is_diesel:
+        include_lng = st.checkbox("Include LNG Plant", value=True)
+        if include_lng:
+            autonomy_days = st.number_input("LNG Autonomy (Days)", 1, 60, 7)
 
     st.divider()
 
-    # --- 6. FINANCIALS & TIME TO MARKET ---
+    # --- 6. REGULATORY & EMISSIONS (PRIME LOGIC) ---
     st.header(t["sb_6"])
+    reg_zone = st.selectbox("Regulatory Zone", ["USA - EPA Major", "EU Standard", "LatAm / No-Reg"])
+    limit_nox_tpy = 250.0 if "EPA" in reg_zone else (150.0 if "EU" in reg_zone else 9999.0)
+    urea_days = st.number_input("Urea Storage (Days)", 1, 30, 7)
+    
+    # After-Treatment Costs
+    st.markdown("🛠️ **After-Treatment Costs (USD)**")
+    cost_scr_kw = st.number_input("SCR System Cost (USD/kW)", 0.0, 200.0, 60.0)
+    cost_oxicat_kw = st.number_input("Oxidation Cat Cost (USD/kW)", 0.0, 100.0, 15.0)
+    force_oxicat = st.checkbox("Force Oxicat Inclusion", value=False)
+
+    st.divider()
+
+    # --- 7. FINANCIALS ---
+    st.header(t["sb_7"])
     st.caption("Rental / PPA Structure")
     
     # Dynamic Fuel Price
@@ -355,10 +378,14 @@ with st.sidebar:
     revenue_per_mw_mo = st.number_input("Revenue Loss (USD/MW/mo)", 10000.0, 1000000.0, 150000.0, step=10000.0, help="Revenue lost per month of delay")
     months_saved = st.number_input("Months Saved vs Utility", 1, 60, 18, help="Time bridge power is active before utility arrives")
     
-    # Buyout Option
-    st.caption("Buyout Option (Year 5)")
+    # Buyout & VPP
+    st.caption("Future Value (Post-Grid)")
     buyout_pct = st.number_input("Buyout Residual Value (%)", 0.0, 100.0, 20.0)
     ref_new_capex = eng_data['est_asset_value_kw']
+    
+    st.caption("VPP Revenue")
+    vpp_arb_spread = st.number_input("VPP Arbitrage ($/MWh)", 0.0, 200.0, 40.0)
+    vpp_cap_pay = st.number_input("VPP Capacity ($/MW-yr)", 0.0, 100000.0, 28000.0)
 
 # ==============================================================================
 # 2. CALCULATION ENGINE
@@ -468,7 +495,21 @@ for b in standard_breakers:
         rec_breaker = b
         break
 
-# E. FINANCIALS & TIME TO MARKET
+# E. EMISSIONS (PRIME LOGIC)
+attenuation = 20 * math.log10(dist_neighbor_m)
+noise_rec = source_noise_dba + (10 * math.log10(n_online)) - attenuation
+total_bhp = p_gross_req * 1341
+nox_tpy = (eng_data['emissions_nox'] * total_bhp * 8760) / 907185
+req_scr = nox_tpy > limit_nox_tpy
+urea_vol_yr = p_gross_req * 1.5 * 8760 if req_scr else 0
+
+at_capex_total = 0
+if req_scr:
+    at_capex_total += (installed_cap_site * 1000) * cost_scr_kw
+if force_oxicat: 
+    at_capex_total += (installed_cap_site * 1000) * cost_oxicat_kw
+
+# F. FINANCIALS & TIME TO MARKET
 # 1. LCOE Bridge
 gen_mwh_yr = p_gross_req * 8760
 fuel_cost_mwh = (hr_net_lhv_btu / 1e6) * fuel_price_mmbtu
@@ -478,26 +519,30 @@ lcoe_bridge = fuel_cost_mwh + rental_cost_mwh + var_om
 lcoe_utility = grid_rate_kwh * 1000
 
 # 2. Opportunity Cost (Time to Market)
-# Total Revenue gained by bridging
 gross_revenue_gain = (p_it * revenue_per_mw_mo * months_saved)
-# Premium Cost of Bridge vs Grid
 bridge_premium_mwh = lcoe_bridge - lcoe_utility
 total_energy_during_bridge = p_gross_req * 730 * months_saved # MWh approx
-cost_of_bridge_premium = (bridge_premium_mwh * total_energy_during_bridge) / 1e6 # In Millions
-# Mobilization & Setup
-capex_setup_m = (installed_cap_site * 1000 * gen_mob_cost) / 1e6
+cost_of_bridge_premium = (bridge_premium_mwh * total_energy_during_bridge) / 1e6 
+# Mobilization & Setup (Includes Emissions Capex)
+capex_setup_m = ((installed_cap_site * 1000 * gen_mob_cost) + at_capex_total) / 1e6
 
 net_benefit_m = (gross_revenue_gain / 1e6) - cost_of_bridge_premium - capex_setup_m
 
-# 3. Buyout
+# 3. Buyout & Future Value
 total_asset_value_m = (installed_cap_site * 1000 * ref_new_capex) / 1e6
 buyout_price_m = total_asset_value_m * (buyout_pct / 100.0)
 savings_vs_new = total_asset_value_m - buyout_price_m
 
-# F. FOOTPRINT
+rev_arb = installed_cap_site * vpp_arb_spread * 365 
+rev_cap = installed_cap_site * vpp_cap_pay
+total_vpp_yr_m = (rev_arb + rev_cap) / 1e6
+
+# G. FOOTPRINT (Consolidated)
 area_gen = n_total * 150 
 area_bess = bess_power * 30 
-total_area_m2 = (area_gen + storage_area_m2 + area_bess + 2500) * 1.2 
+# Add Urea Area if SCR required
+area_urea = (math.ceil((urea_vol_yr/365)*7/30000) * 50) if req_scr else 0
+total_area_m2 = (area_gen + storage_area_m2 + area_bess + area_urea + 2500) * 1.2 
 
 # ==============================================================================
 # 3. DASHBOARD
@@ -518,7 +563,7 @@ c4.metric("Net Benefit (TtM)", f"${net_benefit_m:.1f} M", f"{months_saved} Month
 
 st.divider()
 
-t1, t2, t3, t4 = st.tabs(["⚙️ Tech & Logistics", "⚡ Electrical", "🏗️ Site & Env", "💰 Time-to-Market Analysis"])
+t1, t2, t3, t4 = st.tabs(["⚙️ Engineering", "🏗️ Site & Env", "💰 Business Case", "🔮 Future Value"])
 
 with t1:
     col1, col2 = st.columns(2)
@@ -531,52 +576,55 @@ with t1:
         st.dataframe(df_bal.style.format({"MW": "{:.2f}"}), use_container_width=True)
         
     with col2:
-        st.subheader(f"Logistics: {virtual_pipe_mode}")
+        st.subheader("Electrical Sizing")
+        st.write(f"**Operating Voltage:** {op_voltage_kv} kV")
+        st.write(f"**Grid Contribution:** {grid_mva_sc} MVA")
+        st.write(f"**Gen Contribution:** {gen_sc_mva:.1f} MVA (Xd\" {xd_2_pu})")
+        st.markdown(f"**Total Short Circuit:** :red[**{isc_ka:.1f} kA**]")
+        st.success(f"✅ Recommended Switchgear Rating: **{rec_breaker} kA**")
+
+with t2:
+    c_e1, c_e2 = st.columns(2)
+    with c_e1:
+        st.subheader(f"Fuel Logistics: {virtual_pipe_mode}")
         if virtual_pipe_mode == "Pipeline":
             st.metric("Rec. Pipe Diameter", f"{rec_pipe_dia:.0f} inches")
         elif logistics_info:
             for item in logistics_info:
                 st.write(f"• {item}")
             st.metric("Est. Storage Area", f"{storage_area_m2:.0f} m²")
-
-with t2:
-    st.subheader("Connection")
-    st.write(f"**Frequency:** {freq_hz} Hz")
-    if grid_connected:
-        st.success(f"Grid Parallel: Yes ({grid_mva_sc} MVA Isc)")
-    else:
-        st.warning("Island Mode (Off-Grid)")
-    
-    c_el1, c_el2 = st.columns(2)
-    c_el1.metric("Total Short Circuit", f"{isc_ka:.1f} kA", f"Rec: {rec_breaker} kA")
-    c_el2.metric("Op. Voltage", f"{op_voltage_kv} kV", rec_voltage_str)
-
-with t3:
-    c_e1, c_e2 = st.columns(2)
-    with c_e1:
+            
+        st.divider()
         st.subheader("Footprint")
         st.metric("Total Land Required", f"{d_area_l:.2f} {u_al}")
         
     with c_e2:
+        st.subheader("Emissions & Urea")
+        st.write(f"NOx: {nox_tpy:.0f} Tons/yr")
+        if req_scr:
+            st.warning("SCR Required (Zone Limit Exceeded)")
+            tank_u = math.ceil((urea_vol_yr/365)*urea_days/30000)
+            st.write(f"Urea Tanks: {tank_u}x 30kL")
+            st.write(f"Emissions Setup Cost: ${at_capex_total/1e6:.2f} M")
+        else:
+            st.success("No SCR Required")
+            
+        st.divider()
         st.subheader("Acoustics")
-        attenuation = 20 * math.log10(dist_neighbor_m)
-        noise_total = source_noise_dba + (10 * math.log10(n_online)) - attenuation
-        st.write(f"Receiver Noise: **{noise_total:.1f} dBA**")
-        if noise_total > noise_limit:
+        st.write(f"Receiver Noise: **{noise_rec:.1f} dBA**")
+        if noise_rec > noise_limit:
             st.error(f"Exceeds Limit ({noise_limit} dBA)")
         else:
             st.success("Compliant")
 
-with t4:
-    st.header("💰 Strategic Financial Analysis (Step 8)")
+with t3:
+    st.header("💰 Time-to-Market Analysis (Bridge Phase)")
     
     # 1. Waterfall Chart for Net Benefit
-    st.subheader("1. Net Benefit of Speed (Waterfall)")
-    
     fig_water = go.Figure(go.Waterfall(
         name = "20", orientation = "v",
         measure = ["relative", "relative", "relative", "total"],
-        x = ["Gross Revenue Gained", "Bridge Energy Premium", "Mobilization Cost", "NET BENEFIT"],
+        x = ["Gross Revenue Gained", "Bridge Energy Premium", "Setup & Mob Cost", "NET BENEFIT"],
         textposition = "outside",
         text = [f"+{gross_revenue_gain/1e6:.1f}M", f"-{cost_of_bridge_premium:.1f}M", f"-{capex_setup_m:.1f}M", f"${net_benefit_m:.1f}M"],
         y = [gross_revenue_gain/1e6, -cost_of_bridge_premium, -capex_setup_m, net_benefit_m],
@@ -586,28 +634,32 @@ with t4:
     st.plotly_chart(fig_water, use_container_width=True)
     
     # 2. LCOE
-    st.subheader("2. Cost of Energy Comparison")
-    col_l1, col_l2 = st.columns([1, 2])
-    with col_l1:
-        delta = lcoe_bridge - lcoe_utility
-        st.metric("Bridge Premium", f"${delta:.2f}/MWh")
-        st.caption("This premium is the 'Cost of Speed' deducted in the chart above.")
-    with col_l2:
-        lcoe_data = pd.DataFrame({
-            "Cost Component": ["Fuel", "Rental (Capacity)", "Variable O&M", "Utility Tariff"],
-            "$/MWh": [fuel_cost_mwh, rental_cost_mwh, var_om, lcoe_utility],
-            "Type": ["Bridge", "Bridge", "Bridge", "Utility"]
-        })
-        fig_lcoe = px.bar(lcoe_data, x="Type", y="$/MWh", color="Cost Component", title="LCOE Composition", text_auto='.1f')
-        st.plotly_chart(fig_lcoe, use_container_width=True)
-        
-    # 3. Buyout
-    st.divider()
-    st.subheader("3. Asset Transition (Buyout)")
+    st.subheader("Cost of Energy Comparison")
+    lcoe_data = pd.DataFrame({
+        "Cost Component": ["Fuel", "Rental (Capacity)", "Variable O&M", "Utility Tariff"],
+        "$/MWh": [fuel_cost_mwh, rental_cost_mwh, var_om, lcoe_utility],
+        "Type": ["Bridge", "Bridge", "Bridge", "Utility"]
+    })
+    fig_lcoe = px.bar(lcoe_data, x="Type", y="$/MWh", color="Cost Component", title="LCOE Composition", text_auto='.1f')
+    st.plotly_chart(fig_lcoe, use_container_width=True)
+
+with t4:
+    st.header("🔮 Post-Grid Strategy (Future Value)")
+    
     c_b1, c_b2 = st.columns(2)
-    c_b1.metric("Est. Buyout Price", f"${buyout_price_m:.1f} M", f"{buyout_pct}% Residual")
-    c_b2.metric("New Asset Value", f"${total_asset_value_m:.1f} M")
+    with c_b1:
+        st.subheader("Asset Transfer (Buyout)")
+        st.metric("Est. Buyout Price", f"${buyout_price_m:.1f} M", f"{buyout_pct}% Residual")
+        st.metric("Value of New Plant", f"${total_asset_value_m:.1f} M")
+        st.success(f"**Avoided CAPEX:** ${savings_vs_new:.1f} Million")
+        
+    with c_b2:
+        st.subheader("Virtual Power Plant (VPP)")
+        st.write("Revenue potential if assets are kept for Grid Services:")
+        st.metric("Total VPP Revenue", f"${total_vpp_yr_m:.1f} M/year")
+        st.write(f"• Arbitrage: ${rev_arb/1e6:.1f} M")
+        st.write(f"• Capacity Payments: ${rev_cap/1e6:.1f} M")
 
 # --- FOOTER ---
 st.markdown("---")
-st.caption("CAT Bridge Solutions Designer v12 | Multi-Fuel & Time-to-Market Engine")
+st.caption("CAT Bridge Solutions Designer v13 | Powered by Prime Engineering Engine")
