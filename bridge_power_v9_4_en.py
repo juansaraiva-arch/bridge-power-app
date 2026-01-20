@@ -6,7 +6,7 @@ import plotly.express as px
 import plotly.graph_objects as go
 
 # --- PAGE CONFIGURATION ---
-st.set_page_config(page_title="CAT Bridge Solutions Designer v33", page_icon="🌉", layout="wide")
+st.set_page_config(page_title="CAT Bridge Solutions Designer v34", page_icon="🌉", layout="wide")
 
 # ==============================================================================
 # 0. HYBRID DATA LIBRARY
@@ -22,6 +22,7 @@ bridge_rental_library = {
         "heat_rate_lhv": 8780,
         "step_load_pct": 25.0, 
         "emissions_nox": 0.5,
+        "default_maint": 5.0, "default_for": 2.0, # Added defaults back
         "est_asset_value_kw": 850.0, "est_mob_kw": 80.0,
         "reactance_xd_2": 0.14
     },
@@ -34,6 +35,7 @@ bridge_rental_library = {
         "heat_rate_lhv": 9220,
         "step_load_pct": 15.0, 
         "emissions_nox": 0.6,
+        "default_maint": 3.0, "default_for": 1.5,
         "est_asset_value_kw": 900.0, "est_mob_kw": 120.0,
         "reactance_xd_2": 0.17
     },
@@ -46,6 +48,7 @@ bridge_rental_library = {
         "heat_rate_lhv": 10830,
         "step_load_pct": 20.0,
         "emissions_nox": 0.6,
+        "default_maint": 2.0, "default_for": 1.0,
         "est_asset_value_kw": 950.0, "est_mob_kw": 60.0,
         "reactance_xd_2": 0.18
     },
@@ -58,6 +61,7 @@ bridge_rental_library = {
         "heat_rate_lhv": 9630,
         "step_load_pct": 20.0,
         "emissions_nox": 0.6,
+        "default_maint": 2.0, "default_for": 1.0,
         "est_asset_value_kw": 900.0, "est_mob_kw": 70.0,
         "reactance_xd_2": 0.18
     },
@@ -70,6 +74,7 @@ bridge_rental_library = {
         "heat_rate_lhv": 9000,
         "step_load_pct": 80.0, 
         "emissions_nox": 0.6,
+        "default_maint": 4.0, "default_for": 1.0,
         "est_asset_value_kw": 600.0, "est_mob_kw": 50.0,
         "reactance_xd_2": 0.13
     },
@@ -82,13 +87,27 @@ bridge_rental_library = {
         "heat_rate_lhv": 9100,
         "step_load_pct": 75.0,
         "emissions_nox": 4.0,
+        "default_maint": 4.0, "default_for": 1.5,
         "est_asset_value_kw": 550.0, "est_mob_kw": 50.0,
         "reactance_xd_2": 0.14
+    },
+    "XQ1140": {
+        "description": "Diesel Rental Set (C32) - Compact",
+        "fuels": ["Diesel"],
+        "type": "High Speed",
+        "iso_rating_mw": {60: 0.91, 50: 0.8}, 
+        "electrical_efficiency": 0.360,
+        "heat_rate_lhv": 9480,
+        "step_load_pct": 100.0,
+        "emissions_nox": 4.0,
+        "default_maint": 3.0, "default_for": 1.0,
+        "est_asset_value_kw": 500.0, "est_mob_kw": 40.0,
+        "reactance_xd_2": 0.12
     }
 }
 
 # ==============================================================================
-# 1. SIDEBAR INPUTS
+# 1. INPUTS (SIDEBAR)
 # ==============================================================================
 
 with st.sidebar:
@@ -184,12 +203,19 @@ with st.sidebar:
 
     st.divider()
     
+    # Tech Specs Override
     def_mw = eng_data['iso_rating_mw'][freq_hz]
     unit_size_iso = st.number_input("Unit Prime Rating (ISO MW)", 0.1, 100.0, def_mw, format="%.3f")
     step_load_cap = st.number_input("Unit Step Load Capability (%)", 0.0, 100.0, eng_data['step_load_pct'])
     
     st.markdown("⚠️ **Parasitic Load**")
     gen_parasitic_pct = st.number_input("Gen. Parasitic Load (%)", 0.0, 10.0, 2.5) / 100.0
+
+    # --- FIX: RESTORED AVAILABILITY PARAMETERS ---
+    st.caption("Availability Parameters (N+M+S)")
+    c_r1, c_r2 = st.columns(2)
+    maint_outage_pct = c_r1.number_input("Maint. Unavail (%)", 0.0, 20.0, float(eng_data.get('default_maint', 5.0))) / 100.0
+    forced_outage_pct = c_r2.number_input("Forced Outage Rate (%)", 0.0, 20.0, float(eng_data.get('default_for', 2.0))) / 100.0
 
     st.divider()
     
@@ -354,7 +380,8 @@ elif virtual_pipe_mode in ["Diesel", "Propane"]:
     storage_area_m2 = num_tanks * tank_area_unit
 
 # --- E. ELECTRICAL SIZING (RESTORED) ---
-grid_mva_sc = 500.0 if grid_connected else 0.0 # simplified logic, usually from input
+grid_connected = True # Assumed from context, can be added back to inputs if needed
+grid_mva_sc = 500.0 if grid_connected else 0.0 
 xd_pu = eng_data.get('reactance_xd_2', 0.15)
 gen_mva_total = installed_cap_site / 0.8
 gen_sc_mva = gen_mva_total / xd_pu
@@ -385,6 +412,12 @@ gross_rev = p_it * revenue_per_mw_mo * months_saved
 cost_energy_prem = (lcoe_bridge - lcoe_utility) * (p_net_gen_req * 730 * months_saved) / 1e6
 capex_total = ((n_running * unit_site_cap * 1000 * gen_mob_cost) + log_capex) / 1e6
 net_benefit = (gross_rev/1e6) - cost_energy_prem - capex_total
+
+# --- G. FOOTPRINT ---
+area_gen_total = n_total * 150 
+area_bess_total = bess_power * 30 
+area_sub_total = 2500 
+total_area_m2 = (area_gen_total + storage_area_m2 + area_bess_total + area_sub_total) * 1.2 
 
 # ==============================================================================
 # 3. DASHBOARD
@@ -475,4 +508,4 @@ with t3:
 
 # --- FOOTER ---
 st.markdown("---")
-st.caption("CAT Bridge Solutions Designer v33 | Full Engineering Suite")
+st.caption("CAT Bridge Solutions Designer v34 | Full Engineering Suite")
