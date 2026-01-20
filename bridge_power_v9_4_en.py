@@ -6,13 +6,14 @@ import plotly.express as px
 import plotly.graph_objects as go
 
 # --- PAGE CONFIGURATION ---
-st.set_page_config(page_title="CAT Bridge Solutions Designer v23", page_icon="🌉", layout="wide")
+st.set_page_config(page_title="CAT Bridge Solutions Designer v24", page_icon="🌉", layout="wide")
 
 # ==============================================================================
-# 0. HYBRID DATA LIBRARY
+# 0. HYBRID DATA LIBRARY (RENTAL FLEET: GAS, DIESEL & DUAL FUEL)
 # ==============================================================================
 
 bridge_rental_library = {
+    # --- GAS / DUAL FUEL UNITS ---
     "XGC1900": {
         "description": "Gas Rental Unit (G3516H) - High Efficiency",
         "fuels": ["Natural Gas"],
@@ -77,6 +78,8 @@ bridge_rental_library = {
         "gas_pressure_min_psi": 300.0,
         "reactance_xd_2": 0.18
     },
+
+    # --- DIESEL ONLY UNITS ---
     "XQ2280": {
         "description": "Diesel Power Module (3516C) - Tier 4 Final",
         "fuels": ["Diesel"],
@@ -153,7 +156,7 @@ else:
     u_press = "Bar"
 
 t = {
-    "title": f"🌉 CAT Bridge Solutions Designer v23 ({freq_hz}Hz)",
+    "title": f"🌉 CAT Bridge Solutions Designer v24 ({freq_hz}Hz)",
     "subtitle": "**Time-to-Market Accelerator.**\nEngineering, Logistics & Financial Strategy for Bridge Power.",
     "sb_1": "1. Data Center Profile",
     "sb_2": "2. Technology & Fuel",
@@ -177,7 +180,7 @@ with st.sidebar:
     dc_type_sel = st.selectbox("Data Center Type", ["AI Factory (Training)", "Hyperscale Standard"])
     is_ai = "AI" in dc_type_sel
     
-    # --- DEFAULTS ---
+    # DEFAULTS
     def_step_load = 40.0 if is_ai else 10.0
     def_use_bess = True if is_ai else False
     
@@ -212,62 +215,65 @@ with st.sidebar:
     virtual_pipe_mode = "None"
     methane_number = 80
     
-    # Initialize storage variables (to ensure they exist)
+    # Storage Vars Initialization
     storage_days = 0
     tank_unit_cap = 1.0 
     tank_mob_cost = 0.0
     tank_area_unit = 0.0
-    truck_capacity = 8000.0 # Default truck size
+    truck_capacity = 8000.0 
 
+    # --- FUEL SELECTION LOGIC ---
     if fuel_type_sel == "Natural Gas":
-        st.markdown("🔥 **Gas Properties**")
         methane_number = st.number_input("Methane Number (MN)", 30, 100, 80)
         gas_source = st.radio("Supply Method", ["Pipeline", "Virtual Pipeline (LNG)", "Virtual Pipeline (CNG)"])
         
-        # --- LOGIC FIX: CHECK EXACT MATCH FIRST ---
         if gas_source == "Pipeline":
             virtual_pipe_mode = "Pipeline"
         elif "LNG" in gas_source:
             virtual_pipe_mode = "LNG"
-            st.markdown("🔹 **LNG Storage Setup**")
-            storage_days = st.number_input("Autonomy (Days)", 1, 30, 5)
-            c1, c2 = st.columns(2)
-            tank_unit_cap = c1.number_input("ISO Tank Cap (Gal)", 1000, 20000, 10000)
-            tank_mob_cost = c2.number_input("Mob Cost/Tank ($)", 0, 50000, 5000)
-            truck_capacity = st.number_input("Truck Delivery Vol (Gal)", 1000, 15000, 10000)
-            tank_area_unit = 40.0
-            
         elif "CNG" in gas_source:
             virtual_pipe_mode = "CNG"
-            st.markdown("🔹 **CNG Storage Setup**")
-            storage_days = st.number_input("Autonomy (Days)", 1, 30, 1)
-            c1, c2 = st.columns(2)
-            tank_unit_cap = c1.number_input("Trailer Cap (scf)", 50000, 1000000, 350000)
-            tank_mob_cost = c2.number_input("Mob Cost/Trailer ($)", 0, 50000, 2000)
-            truck_capacity = tank_unit_cap # Usually swap and drop
-            tank_area_unit = 60.0
             
     elif fuel_type_sel == "Diesel":
         virtual_pipe_mode = "Diesel"
-        st.markdown("🔹 **Diesel Storage Setup**")
-        storage_days = st.number_input("Autonomy (Days)", 1, 30, 3)
-        c1, c2 = st.columns(2)
-        tank_unit_cap = c1.number_input("Frac Tank Cap (Gal)", 1000, 50000, 20000)
-        tank_mob_cost = c2.number_input("Mob Cost/Tank ($)", 0, 50000, 2500)
-        truck_capacity = st.number_input("Truck Delivery Vol (Gal)", 1000, 15000, 8000)
-        tank_area_unit = 50.0
         
     elif fuel_type_sel == "Propane":
         virtual_pipe_mode = "Propane"
-        st.markdown("🔹 **LPG Storage Setup**")
-        storage_days = st.number_input("Autonomy (Days)", 1, 30, 5)
-        c1, c2 = st.columns(2)
-        tank_unit_cap = c1.number_input("Bullet Cap (Gal)", 1000, 100000, 30000)
-        tank_mob_cost = c2.number_input("Mob Cost/Tank ($)", 0, 50000, 5000)
-        truck_capacity = st.number_input("Truck Delivery Vol (Gal)", 1000, 15000, 9000)
-        tank_area_unit = 80.0
 
-    # Tech Inputs Continued
+    # --- STORAGE INPUTS (CONDITIONAL) ---
+    # Moved here to ensure they render based on virtual_pipe_mode state
+    if virtual_pipe_mode != "Pipeline":
+        st.markdown("---")
+        st.markdown(f"🛢️ **{virtual_pipe_mode} Storage & Logistics**")
+        
+        # Set defaults based on mode
+        d_days = 5
+        d_cap = 10000.0
+        d_mob = 5000.0
+        d_area = 40.0
+        
+        if virtual_pipe_mode == "Diesel":
+            d_days = 3; d_cap = 20000.0; d_mob = 2500.0; d_area = 50.0
+        elif virtual_pipe_mode == "CNG":
+            d_days = 1; d_cap = 350000.0; d_mob = 2000.0; d_area = 60.0
+        elif virtual_pipe_mode == "Propane":
+            d_days = 5; d_cap = 30000.0; d_mob = 5000.0; d_area = 80.0
+            
+        storage_days = st.number_input("Autonomy (Days)", 1, 30, d_days)
+        
+        c_s1, c_s2 = st.columns(2)
+        lbl_cap = "Tank Cap (scf)" if virtual_pipe_mode == "CNG" else "Tank Cap (Gal)"
+        
+        tank_unit_cap = c_s1.number_input(lbl_cap, 1000.0, 1000000.0, d_cap)
+        tank_mob_cost = c_s2.number_input("Mob Cost/Tank ($)", 0.0, 50000.0, d_mob)
+        tank_area_unit = st.number_input("Area per Tank (m²)", 10.0, 200.0, d_area)
+        
+        if virtual_pipe_mode != "CNG":
+            truck_capacity = st.number_input("Truck Delivery Vol (Gal)", 1000.0, 15000.0, 10000.0)
+        else:
+            truck_capacity = tank_unit_cap # For CNG usually drop-and-swap
+
+    # 4. Tech Specs
     st.divider()
     def_mw = eng_data['iso_rating_mw'][freq_hz]
     unit_size_iso = st.number_input("Unit Prime Rating (ISO MW)", 0.1, 100.0, def_mw, format="%.3f")
@@ -683,6 +689,7 @@ with t2:
         st.dataframe(df_foot.style.format({f"Area ({u_as})": "{:,.0f}"}), use_container_width=True)
         st.metric("TOTAL LAND REQUIRED", f"{d_area_l:.2f} {u_al}")
         
+        
     with c_e2:
         st.subheader("Emissions & Urea")
         st.write(f"NOx: {nox_tpy:.0f} Tons/yr")
@@ -750,4 +757,4 @@ with t4:
 
 # --- FOOTER ---
 st.markdown("---")
-st.caption("CAT Bridge Solutions Designer v23 | Powered by Prime Engineering Engine")
+st.caption("CAT Bridge Solutions Designer v24 | Powered by Prime Engineering Engine")
