@@ -6,7 +6,7 @@ import plotly.express as px
 import plotly.graph_objects as go
 
 # --- PAGE CONFIGURATION ---
-st.set_page_config(page_title="CAT Bridge Solutions Designer v13", page_icon="🌉", layout="wide")
+st.set_page_config(page_title="CAT Bridge Solutions Designer v13.1", page_icon="🌉", layout="wide")
 
 # ==============================================================================
 # 0. HYBRID DATA LIBRARY (RENTAL FLEET: GAS, DIESEL & DUAL FUEL)
@@ -139,15 +139,17 @@ else:
     u_energy, u_therm, u_water = "MWh", "GJ", "m³/day"
     u_press = "Bar"
 
+# --- FIXED DICTIONARY WITH ALL SECTIONS ---
 t = {
-    "title": f"🌉 CAT Bridge Solutions Designer v13 ({freq_hz}Hz)",
+    "title": f"🌉 CAT Bridge Solutions Designer v13.1 ({freq_hz}Hz)",
     "subtitle": "**Time-to-Market Accelerator.**\nEngineering, Logistics & Financial Strategy for Bridge Power.",
     "sb_1": "1. Data Center Profile",
     "sb_2": "2. Technology & Fuel",
     "sb_3": "3. Site, Logistics & Noise",
     "sb_4": "4. Strategy (BESS & LNG)",
-    "sb_5": "5. Cooling & Env",
-    "sb_6": "6. Business & Future Value"
+    "sb_5": "5. Cooling (Not Used)", # Placeholder or removed
+    "sb_6": "6. Regulatory & Emissions", # Added this
+    "sb_7": "7. Financials & Strategy"   # Added this
 }
 
 st.title(t["title"])
@@ -598,6 +600,7 @@ with t2:
         st.subheader("Footprint")
         st.metric("Total Land Required", f"{d_area_l:.2f} {u_al}")
         
+        
     with c_e2:
         st.subheader("Emissions & Urea")
         st.write(f"NOx: {nox_tpy:.0f} Tons/yr")
@@ -662,4 +665,4 @@ with t4:
 
 # --- FOOTER ---
 st.markdown("---")
-st.caption("CAT Bridge Solutions Designer v13 | Powered by Prime Engineering Engine")
+st.caption("CAT Bridge Solutions Designer v13.1 | Powered by Prime Engineering Engine")
