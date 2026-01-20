@@ -6,7 +6,7 @@ import plotly.express as px
 import plotly.graph_objects as go
 
 # --- PAGE CONFIGURATION ---
-st.set_page_config(page_title="CAT Bridge Solutions Designer v26", page_icon="🌉", layout="wide")
+st.set_page_config(page_title="CAT Bridge Solutions Designer v27", page_icon="🌉", layout="wide")
 
 # ==============================================================================
 # 0. HYBRID DATA LIBRARY
@@ -100,7 +100,7 @@ bridge_rental_library = {
 }
 
 # ==============================================================================
-# 1. INPUTS
+# 1. INPUTS (SIDEBAR)
 # ==============================================================================
 
 with st.sidebar:
@@ -124,6 +124,7 @@ with st.sidebar:
     p_it = st.number_input("Critical IT Load (MW)", 1.0, 1000.0, 50.0, step=10.0)
     pue_input = st.number_input("Design PUE", 1.0, 2.0, 1.35, step=0.01)
     
+    avail_req = st.number_input("Availability Target (%)", 90.0, 99.99999, 99.99, format="%.5f")
     step_load_req = st.number_input("Expected Step Load (%)", 0.0, 100.0, def_step_load)
     dist_loss_pct = st.number_input("Distribution Losses (%)", 0.0, 10.0, 1.0) / 100.0
 
@@ -134,51 +135,59 @@ with st.sidebar:
     fuel_type_sel = st.selectbox("Fuel Source", ["Natural Gas", "Diesel", "Propane"])
     
     avail_models = [k for k, v in bridge_rental_library.items() if fuel_type_sel in v['fuels']]
-    if not avail_models: st.error("No units found"); st.stop()
-            
     selected_model = st.selectbox("Select Bridge Unit", avail_models)
     eng_data = bridge_rental_library[selected_model]
     st.info(f"**{eng_data['description']}**")
 
-    # Storage Vars
+    # Storage Vars Initialization
     virtual_pipe_mode = "None"
     methane_number = 80
-    tank_unit_cap, tank_mob_cost, tank_area_unit, storage_days = 1.0, 0.0, 0.0, 0
+    tank_unit_cap = 1.0 
+    tank_mob_cost = 0.0
+    tank_area_unit = 0.0
+    truck_capacity = 8000.0
+    storage_days = 0
 
+    # Logic to show storage inputs immediately
     if fuel_type_sel == "Natural Gas":
         methane_number = st.number_input("Methane Number (MN)", 30, 100, 80)
         gas_source = st.radio("Supply Method", ["Pipeline", "Virtual Pipeline (LNG)", "Virtual Pipeline (CNG)"])
         
-        if gas_source == "Pipeline": virtual_pipe_mode = "Pipeline"
+        if gas_source == "Pipeline":
+            virtual_pipe_mode = "Pipeline"
         elif "LNG" in gas_source:
             virtual_pipe_mode = "LNG"
             st.markdown("🔹 **LNG Storage**")
             storage_days = st.number_input("Autonomy (Days)", 1, 30, 5)
-            tank_unit_cap = st.number_input("ISO Tank Cap (Gal)", 1000, 20000, 10000)
-            tank_mob_cost = st.number_input("Mob Cost/Tank ($)", 0, 50000, 5000)
+            c1, c2 = st.columns(2)
+            tank_unit_cap = c1.number_input("ISO Tank Cap (Gal)", 1000, 20000, 10000)
+            tank_mob_cost = c2.number_input("Mob Cost/Tank ($)", 0, 50000, 5000)
             tank_area_unit = 40.0
         elif "CNG" in gas_source:
             virtual_pipe_mode = "CNG"
             st.markdown("🔹 **CNG Storage**")
             storage_days = st.number_input("Autonomy (Days)", 1, 30, 1)
-            tank_unit_cap = st.number_input("Trailer Cap (scf)", 50000, 1000000, 350000)
-            tank_mob_cost = st.number_input("Mob Cost/Trailer ($)", 0, 50000, 2000)
+            c1, c2 = st.columns(2)
+            tank_unit_cap = c1.number_input("Trailer Cap (scf)", 50000, 1000000, 350000)
+            tank_mob_cost = c2.number_input("Mob Cost/Trailer ($)", 0, 50000, 2000)
             tank_area_unit = 60.0
             
     elif fuel_type_sel == "Diesel":
         virtual_pipe_mode = "Diesel"
         st.markdown("🔹 **Diesel Storage**")
         storage_days = st.number_input("Autonomy (Days)", 1, 30, 3)
-        tank_unit_cap = st.number_input("Frac Tank Cap (Gal)", 1000, 50000, 20000)
-        tank_mob_cost = st.number_input("Mob Cost/Tank ($)", 0, 50000, 2500)
+        c1, c2 = st.columns(2)
+        tank_unit_cap = c1.number_input("Frac Tank Cap (Gal)", 1000, 50000, 20000)
+        tank_mob_cost = c2.number_input("Mob Cost/Tank ($)", 0, 50000, 2500)
         tank_area_unit = 50.0
         
     elif fuel_type_sel == "Propane":
         virtual_pipe_mode = "Propane"
         st.markdown("🔹 **LPG Storage**")
         storage_days = st.number_input("Autonomy (Days)", 1, 30, 5)
-        tank_unit_cap = st.number_input("Tank Cap (Gal)", 1000, 100000, 30000)
-        tank_mob_cost = st.number_input("Mob Cost/Tank ($)", 0, 50000, 5000)
+        c1, c2 = st.columns(2)
+        tank_unit_cap = c1.number_input("Bullet Cap (Gal)", 1000, 100000, 30000)
+        tank_mob_cost = c2.number_input("Mob Cost/Tank ($)", 0, 50000, 5000)
         tank_area_unit = 80.0
 
     st.divider()
@@ -226,6 +235,12 @@ with st.sidebar:
     revenue_per_mw_mo = st.number_input("Revenue Loss (USD/MW/mo)", 10000.0, 1000000.0, 150000.0)
     months_saved = st.number_input("Months Saved", 1, 60, 18)
 
+    # Buyout Params
+    buyout_pct = 20.0
+    ref_new_capex = eng_data['est_asset_value_kw']
+    vpp_arb_spread = 40.0
+    vpp_cap_pay = 28000.0
+
 # ==============================================================================
 # 2. CALCULATION ENGINE (PHYSICS & THERMODYNAMICS)
 # ==============================================================================
@@ -250,7 +265,6 @@ if use_bess:
     bess_energy = bess_power * 2 # 2 hr duration
 else:
     # No BESS. Engines provide Spinning Reserve for Step Load.
-    # Logic: Available Headroom >= Step Load
     n_min = math.ceil(p_net_gen_req / unit_site_cap)
     n_running = n_min
     while True:
@@ -291,7 +305,7 @@ real_load_factor = p_gross_total / (n_running * unit_site_cap)
 
 # 4. Part-Load Efficiency Correction (RICE vs Turbine)
 base_eff = eng_data['electrical_efficiency']
-type_tech = eng_data['type']
+type_tech = bridge_rental_library[selected_model].get('type', 'High Speed')
 
 if type_tech == "High Speed": 
     # Recip Engine Curve: Stable high, drops below 75%
@@ -307,43 +321,54 @@ else:
 gross_eff_site = base_eff * eff_factor
 gross_hr_lhv = 3412.14 / gross_eff_site
 
-# 5. NET HEAT RATE (The Metric that matters)
-# Net HR = Fuel Input (MMBtu) / Net Output (MWh)
-fuel_input_mmbtu_hr = p_gross_total * (gross_hr_lhv / 1e6)
-net_output_mw = p_it # Useful IT Load (Strict Net) OR p_net_gen_req (Facility Net). 
-# Standard Industry Practice: Net HR usually refers to Facility Net (Post-Aux, Pre-Dist Loss)
-# But let's calculate based on p_net_gen_req (Output from Gen Bus - Aux)
-net_hr_lhv = (fuel_input_mmbtu_hr * 1e6) / p_net_gen_req
+# NET HR = Fuel (Btu) / Net Load (kWh)
+# Fuel Input = Gross Gen * Gross HR
+total_fuel_input_mmbtu = p_gross_total * (gross_hr_lhv / 1e6) 
+net_hr_lhv = (total_fuel_input_mmbtu * 1e6) / p_net_gen_req
 
 # HHV Conversion
 hhv_factor = 1.108 if fuel_type_sel == "Natural Gas" else (1.06 if fuel_type_sel == "Diesel" else 1.09)
 net_hr_hhv = net_hr_lhv * hhv_factor
 
+n_maint = math.ceil(n_running * 0.05) # Fixed 5% maint
+n_forced_buffer = math.ceil(n_running * 0.02) # Fixed 2% FOR
+n_reserve = max(n_forced_buffer, 1) # Min 1 standby
+
+n_total = n_running + n_maint + n_reserve
+installed_cap_site = n_total * unit_site_cap
+
 # --- D. LOGISTICS ---
-total_mmbtu_day = fuel_input_mmbtu_hr * 24
-num_tanks = 0; log_capex = 0; log_text = "Pipeline"
+total_mmbtu_day = total_fuel_input_mmbtu * 24
+
+# *** FIX: INITIALIZE ALL VARS TO AVOID NAME ERROR ***
+num_tanks = 0
+log_capex = 0
+log_text = "Pipeline"
+storage_area_m2 = 0 
 
 if virtual_pipe_mode == "LNG":
     vol_day = total_mmbtu_day * 12.5
     num_tanks = math.ceil((vol_day * storage_days)/tank_unit_cap)
     log_capex = num_tanks * tank_mob_cost
     log_text = f"LNG: {vol_day:,.0f} gpd"
+    storage_area_m2 = num_tanks * tank_area_unit
 elif virtual_pipe_mode == "CNG":
     vol_day = total_mmbtu_day * 1000
     num_tanks = math.ceil((vol_day * storage_days)/tank_unit_cap)
     log_capex = num_tanks * tank_mob_cost
     log_text = f"CNG: {vol_day/1e6:.2f} MMscfd"
+    storage_area_m2 = num_tanks * tank_area_unit
 elif virtual_pipe_mode in ["Diesel", "Propane"]:
     conv = 7.3 if virtual_pipe_mode == "Diesel" else 11.0
     vol_day = total_mmbtu_day * conv
     num_tanks = math.ceil((vol_day * storage_days)/tank_unit_cap)
     log_capex = num_tanks * tank_mob_cost
     log_text = f"{virtual_pipe_mode}: {vol_day:,.0f} gpd"
+    storage_area_m2 = num_tanks * tank_area_unit
 
 # --- E. FINANCIALS ---
-gen_mwh_yr = p_gross_total * 8760 # Fuel is paid on Gross
+gen_mwh_yr = p_gross_total * 8760
 # Fuel Cost per MWh (Useful)
-# Cost = (Fuel Input / Net Gen) * Price
 fuel_cost_mwh = (net_hr_lhv / 1e6) * fuel_price_mmbtu * 1000
 
 rental_cost_yr = (n_running * unit_site_cap) * cap_charge * 12
@@ -426,4 +451,4 @@ with t3:
 
 # --- FOOTER ---
 st.markdown("---")
-st.caption("CAT Bridge Solutions Designer v26 | Physics-Based Thermodynamics")
+st.caption("CAT Bridge Solutions Designer v27 | Physics-Based Thermodynamics")
