@@ -6,7 +6,7 @@ import plotly.express as px
 import plotly.graph_objects as go
 
 # --- PAGE CONFIGURATION ---
-st.set_page_config(page_title="CAT Bridge Solutions Designer v27", page_icon="🌉", layout="wide")
+st.set_page_config(page_title="CAT Bridge Solutions Designer v28", page_icon="🌉", layout="wide")
 
 # ==============================================================================
 # 0. HYBRID DATA LIBRARY
@@ -148,7 +148,6 @@ with st.sidebar:
     truck_capacity = 8000.0
     storage_days = 0
 
-    # Logic to show storage inputs immediately
     if fuel_type_sel == "Natural Gas":
         methane_number = st.number_input("Methane Number (MN)", 30, 100, 80)
         gas_source = st.radio("Supply Method", ["Pipeline", "Virtual Pipeline (LNG)", "Virtual Pipeline (CNG)"])
@@ -162,6 +161,7 @@ with st.sidebar:
             c1, c2 = st.columns(2)
             tank_unit_cap = c1.number_input("ISO Tank Cap (Gal)", 1000, 20000, 10000)
             tank_mob_cost = c2.number_input("Mob Cost/Tank ($)", 0, 50000, 5000)
+            truck_capacity = st.number_input("Truck Delivery Vol (Gal)", 1000, 15000, 10000)
             tank_area_unit = 40.0
         elif "CNG" in gas_source:
             virtual_pipe_mode = "CNG"
@@ -170,6 +170,7 @@ with st.sidebar:
             c1, c2 = st.columns(2)
             tank_unit_cap = c1.number_input("Trailer Cap (scf)", 50000, 1000000, 350000)
             tank_mob_cost = c2.number_input("Mob Cost/Trailer ($)", 0, 50000, 2000)
+            truck_capacity = tank_unit_cap 
             tank_area_unit = 60.0
             
     elif fuel_type_sel == "Diesel":
@@ -179,6 +180,7 @@ with st.sidebar:
         c1, c2 = st.columns(2)
         tank_unit_cap = c1.number_input("Frac Tank Cap (Gal)", 1000, 50000, 20000)
         tank_mob_cost = c2.number_input("Mob Cost/Tank ($)", 0, 50000, 2500)
+        truck_capacity = st.number_input("Truck Delivery Vol (Gal)", 1000, 15000, 8000)
         tank_area_unit = 50.0
         
     elif fuel_type_sel == "Propane":
@@ -188,10 +190,11 @@ with st.sidebar:
         c1, c2 = st.columns(2)
         tank_unit_cap = c1.number_input("Bullet Cap (Gal)", 1000, 100000, 30000)
         tank_mob_cost = c2.number_input("Mob Cost/Tank ($)", 0, 50000, 5000)
+        truck_capacity = st.number_input("Truck Delivery Vol (Gal)", 1000, 15000, 9000)
         tank_area_unit = 80.0
 
     st.divider()
-    # Tech Specs Override
+    
     def_mw = eng_data['iso_rating_mw'][freq_hz]
     unit_size_iso = st.number_input("Unit Prime Rating (ISO MW)", 0.1, 100.0, def_mw, format="%.3f")
     step_load_cap = st.number_input("Unit Step Load Capability (%)", 0.0, 100.0, eng_data['step_load_pct'])
@@ -202,18 +205,15 @@ with st.sidebar:
 
     st.divider()
     
-    # 3. Site
     st.header("3. Site & Conditions")
     manual_derate_pct = st.number_input("Site Derating (%)", 0.0, 50.0, 5.0)
     derate_factor_calc = 1.0 - (manual_derate_pct / 100.0)
     
     st.divider()
 
-    # 4. Strategy
     st.header("4. Strategy")
     use_bess = st.checkbox("Include BESS (Optimization)", value=def_use_bess)
 
-    # 7. Financials
     st.header("7. Financials")
     if fuel_type_sel == "Natural Gas":
         fuel_price_unit = st.number_input("Gas Price (USD/MMBtu)", 1.0, 20.0, 5.0)
@@ -256,37 +256,21 @@ step_mw_req_site = p_it * (step_load_req / 100.0)
 
 # --- CRITICAL LOGIC: N_RUNNING & LOAD FACTOR ---
 if use_bess:
-    # BESS handles steps. Run engines at optimal base load.
     target_load_factor = 0.95 
-    n_base_mw = p_net_gen_req / (1 - gen_parasitic_pct) # Estimate gross
+    n_base_mw = p_net_gen_req / (1 - gen_parasitic_pct) 
     n_running = math.ceil(n_base_mw / (unit_site_cap * target_load_factor))
-    
-    bess_power = max(step_mw_req_site, unit_site_cap)
-    bess_energy = bess_power * 2 # 2 hr duration
+    bess_power = max(step_mw_req_site, unit_site_cap) 
+    bess_energy = bess_power * 2 
 else:
-    # No BESS. Engines provide Spinning Reserve for Step Load.
     n_min = math.ceil(p_net_gen_req / unit_site_cap)
     n_running = n_min
     while True:
-        # Step Capability = Running Cap * Step% (or remaining headroom)
         total_cap_mw = n_running * unit_site_cap
-        # Parasitics depend on N (Fixed per unit)
-        total_parasitics_mw = n_running * (unit_size_iso * gen_parasitic_pct) # Fixed load per unit
-        
-        # Available Gross Capacity for Load
-        avail_gross_for_load = total_cap_mw - total_parasitics_mw
-        
-        # Current Load %
+        total_parasitics_mw = n_running * (unit_size_iso * gen_parasitic_pct) 
         gross_load_needed = p_net_gen_req + total_parasitics_mw
-        current_load_pct = gross_load_needed / total_cap_mw
-        
-        # Headroom Check
         headroom_mw = total_cap_mw - gross_load_needed
-        
-        # Transient Check (Can the fleet accept the step?)
         step_capacity_mw = total_cap_mw * (step_load_cap / 100.0)
         
-        # Valid if Headroom > Step AND Step Cap > Step
         if headroom_mw >= step_mw_req_site and step_capacity_mw >= step_mw_req_site:
             break
         n_running += 1
@@ -294,45 +278,36 @@ else:
     bess_power = 0; bess_energy = 0
 
 # --- C. THERMODYNAMICS & EFFICIENCY ---
-# 1. Total Parasitics (Fixed Physics: Fans/Pumps run per unit)
 total_parasitics_mw = n_running * (unit_size_iso * gen_parasitic_pct)
-
-# 2. Total Gross Generation Required
 p_gross_total = p_net_gen_req + total_parasitics_mw
-
-# 3. Real Fleet Load Factor
 real_load_factor = p_gross_total / (n_running * unit_site_cap)
 
-# 4. Part-Load Efficiency Correction (RICE vs Turbine)
+# Part-Load Efficiency Correction
 base_eff = eng_data['electrical_efficiency']
 type_tech = bridge_rental_library[selected_model].get('type', 'High Speed')
 
 if type_tech == "High Speed": 
-    # Recip Engine Curve: Stable high, drops below 75%
-    if real_load_factor >= 0.75: 
-        eff_factor = 1.0
-    else: 
-        # Quadratic decay below 75%
-        eff_factor = 1.0 - (0.5 * (0.75 - real_load_factor)**2)
+    if real_load_factor >= 0.75: eff_factor = 1.0
+    else: eff_factor = 1.0 - (0.5 * (0.75 - real_load_factor)**2)
 else: 
-    # Turbine: Linear drop
     eff_factor = 1.0 - (0.6 * (1.0 - real_load_factor))
 
 gross_eff_site = base_eff * eff_factor
 gross_hr_lhv = 3412.14 / gross_eff_site
 
-# NET HR = Fuel (Btu) / Net Load (kWh)
+# --- FIX: NET HR CALCULATION (USEFUL LOAD) ---
 # Fuel Input = Gross Gen * Gross HR
 total_fuel_input_mmbtu = p_gross_total * (gross_hr_lhv / 1e6) 
-net_hr_lhv = (total_fuel_input_mmbtu * 1e6) / p_net_gen_req
+# Net HR = Total Fuel / Useful Facility Load (Excluding Losses)
+net_hr_lhv = (total_fuel_input_mmbtu * 1e6) / p_total_site_load
 
 # HHV Conversion
 hhv_factor = 1.108 if fuel_type_sel == "Natural Gas" else (1.06 if fuel_type_sel == "Diesel" else 1.09)
 net_hr_hhv = net_hr_lhv * hhv_factor
 
-n_maint = math.ceil(n_running * 0.05) # Fixed 5% maint
-n_forced_buffer = math.ceil(n_running * 0.02) # Fixed 2% FOR
-n_reserve = max(n_forced_buffer, 1) # Min 1 standby
+n_maint = math.ceil(n_running * 0.05) 
+n_forced_buffer = math.ceil(n_running * 0.02) 
+n_reserve = max(n_forced_buffer, 1) 
 
 n_total = n_running + n_maint + n_reserve
 installed_cap_site = n_total * unit_site_cap
@@ -340,11 +315,8 @@ installed_cap_site = n_total * unit_site_cap
 # --- D. LOGISTICS ---
 total_mmbtu_day = total_fuel_input_mmbtu * 24
 
-# *** FIX: INITIALIZE ALL VARS TO AVOID NAME ERROR ***
-num_tanks = 0
-log_capex = 0
-log_text = "Pipeline"
-storage_area_m2 = 0 
+# Initializing vars to prevent NameError
+num_tanks = 0; log_capex = 0; log_text = "Pipeline"; storage_area_m2 = 0 
 
 if virtual_pipe_mode == "LNG":
     vol_day = total_mmbtu_day * 12.5
@@ -368,7 +340,6 @@ elif virtual_pipe_mode in ["Diesel", "Propane"]:
 
 # --- E. FINANCIALS ---
 gen_mwh_yr = p_gross_total * 8760
-# Fuel Cost per MWh (Useful)
 fuel_cost_mwh = (net_hr_lhv / 1e6) * fuel_price_mmbtu * 1000
 
 rental_cost_yr = (n_running * unit_site_cap) * cap_charge * 12
@@ -404,7 +375,7 @@ with t1:
         
         col_a, col_b = st.columns(2)
         col_a.metric("Gross HR (Engine)", f"{gross_hr_lhv:,.0f}", f"Eff: {gross_eff_site*100:.1f}%")
-        col_b.metric("Net HR (System)", f"{net_hr_lhv:,.0f}", f"Delta: +{net_hr_lhv-gross_hr_lhv:,.0f}")
+        col_b.metric("Net HR (Useful Load)", f"{net_hr_lhv:,.0f}", f"Delta: +{net_hr_lhv-gross_hr_lhv:,.0f}")
         
         st.info(f"**Billing Heat Rate (HHV):** {net_hr_hhv:,.0f} Btu/kWh")
         
@@ -451,4 +422,4 @@ with t3:
 
 # --- FOOTER ---
 st.markdown("---")
-st.caption("CAT Bridge Solutions Designer v27 | Physics-Based Thermodynamics")
+st.caption("CAT Bridge Solutions Designer v28 | Physics-Based Thermodynamics")
