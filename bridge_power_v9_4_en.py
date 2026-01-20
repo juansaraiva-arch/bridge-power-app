@@ -6,7 +6,7 @@ import plotly.express as px
 import plotly.graph_objects as go
 
 # --- PAGE CONFIGURATION ---
-st.set_page_config(page_title="CAT Bridge Solutions Designer v36", page_icon="🌉", layout="wide")
+st.set_page_config(page_title="CAT Bridge Solutions Designer v37", page_icon="🌉", layout="wide")
 
 # ==============================================================================
 # 0. HYBRID DATA LIBRARY
@@ -246,11 +246,12 @@ with st.sidebar:
     revenue_per_mw_mo = st.number_input("Revenue Loss (USD/MW/mo)", 10000.0, 1000000.0, 150000.0)
     months_saved = st.number_input("Months Saved", 1, 60, 18)
 
-    # Buyout Params
-    buyout_pct = 20.0
+    # Buyout Params (For Tab 4)
+    st.caption("Post-Grid Strategy Options")
+    buyout_pct = st.number_input("Buyout Residual Value (%)", 0.0, 100.0, 20.0)
     ref_new_capex = eng_data['est_asset_value_kw']
-    vpp_arb_spread = 40.0
-    vpp_cap_pay = 28000.0
+    vpp_arb_spread = st.number_input("VPP Arbitrage ($/MWh)", 0.0, 200.0, 40.0)
+    vpp_cap_pay = st.number_input("VPP Capacity ($/MW-yr)", 0.0, 100000.0, 28000.0)
 
 # ==============================================================================
 # 2. CALCULATION ENGINE (PRIME ALGORITHM v3 - AGGRESSIVE)
@@ -410,6 +411,15 @@ cost_energy_prem = (lcoe_bridge - lcoe_utility) * (p_net_gen_req * 730 * months_
 capex_total = ((n_running * unit_site_cap * 1000 * gen_mob_cost) + log_capex) / 1e6
 net_benefit = (gross_rev/1e6) - cost_energy_prem - capex_total
 
+# --- CALCULATIONS FOR TAB 4 (FUTURE VALUE) ---
+total_asset_value_m = (installed_cap_site * 1000 * ref_new_capex) / 1e6
+buyout_price_m = total_asset_value_m * (buyout_pct / 100.0)
+savings_vs_new = total_asset_value_m - buyout_price_m
+
+rev_arb = installed_cap_site * vpp_arb_spread * 365 
+rev_cap = installed_cap_site * vpp_cap_pay
+total_vpp_yr_m = (rev_arb + rev_cap) / 1e6
+
 # --- G. FOOTPRINT ---
 area_gen_total = n_total * 150 
 area_bess_total = bess_power * 30 
@@ -428,7 +438,7 @@ c4.metric("Net Benefit", f"${net_benefit:.1f} M", f"Saved: {months_saved} Mo")
 
 st.divider()
 
-t1, t2, t3 = st.tabs(["⚙️ Engineering & Fleet", "🏗️ Logistics & Site", "💰 Business Case"])
+t1, t2, t3, t4 = st.tabs(["⚙️ Engineering & Fleet", "🏗️ Logistics & Site", "💰 Business Case", "🔮 Future Value"])
 
 with t1:
     col1, col2, col3 = st.columns(3)
@@ -449,7 +459,7 @@ with t1:
         st.subheader("🚜 Fleet Strategy (N+M+S)")
         st.write(f"**Model:** {selected_model}")
         st.write(f"**Site Rating:** {unit_site_cap:.2f} MW")
-        st.write(f"**Avg. Load Factor:** {real_load_factor*100:.1f}%") # ADDED METRIC HERE
+        st.write(f"**Avg. Load Factor:** {real_load_factor*100:.1f}%")
         st.markdown("---")
         st.write(f"**N (Running):** {n_running}")
         st.write(f"**M (Maintenance):** {n_maint}")
@@ -484,8 +494,6 @@ with t2:
         
     st.divider()
     st.subheader("Footprint")
-    
-    # FIXED DATAFRAME FORMATTING
     col_name = f"Area ({'ft²' if is_imperial else 'm²'})"
     df_foot = pd.DataFrame({
         "Zone": ["Generation", "Fuel/Logistics", "BESS", "Substation", "Total"],
@@ -493,7 +501,6 @@ with t2:
             area_gen_total, storage_area_m2, area_bess_total, area_sub_total, total_area_m2
         ]
     })
-    # Apply format ONLY to the numeric column
     st.dataframe(df_foot.style.format({col_name: "{:,.0f}"}), use_container_width=True)
 
 with t3:
@@ -508,7 +515,34 @@ with t3:
         connector = {"line":{"color":"rgb(63, 63, 63)"}},
     ))
     st.plotly_chart(fig_water, use_container_width=True)
+    
+    st.divider()
+    st.subheader("LCOE Structure")
+    lcoe_data = pd.DataFrame({
+        "Cost Component": ["Fuel", "Rental (Capacity)", "Variable O&M", "Utility Tariff"],
+        "$/MWh": [fuel_cost_mwh, rental_cost_mwh, var_om, lcoe_utility],
+        "Type": ["Bridge", "Bridge", "Bridge", "Utility"]
+    })
+    fig_lcoe = px.bar(lcoe_data, x="Type", y="$/MWh", color="Cost Component", title="LCOE Composition", text_auto='.1f')
+    st.plotly_chart(fig_lcoe, use_container_width=True)
+
+with t4:
+    st.header("🔮 Post-Grid Strategy (Future Value)")
+    
+    c_b1, c_b2 = st.columns(2)
+    with c_b1:
+        st.subheader("Asset Transfer (Buyout)")
+        st.metric("Est. Buyout Price", f"${buyout_price_m:.1f} M", f"{buyout_pct}% Residual")
+        st.metric("Value of New Plant", f"${total_asset_value_m:.1f} M")
+        st.success(f"**Avoided CAPEX:** ${savings_vs_new:.1f} Million")
+        
+    with c_b2:
+        st.subheader("Virtual Power Plant (VPP)")
+        st.write("Revenue potential if assets are kept for Grid Services:")
+        st.metric("Total VPP Revenue", f"${total_vpp_yr_m:.1f} M/year")
+        st.write(f"• Arbitrage: ${rev_arb/1e6:.1f} M")
+        st.write(f"• Capacity Payments: ${rev_cap/1e6:.1f} M")
 
 # --- FOOTER ---
 st.markdown("---")
-st.caption("CAT Bridge Solutions Designer v36 | Full Engineering Suite")
+st.caption("CAT Bridge Solutions Designer v37 | Full Engineering Suite")
