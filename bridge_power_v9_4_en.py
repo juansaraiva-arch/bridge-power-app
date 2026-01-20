@@ -6,10 +6,11 @@ import plotly.express as px
 import plotly.graph_objects as go
 
 # --- PAGE CONFIGURATION ---
-st.set_page_config(page_title="CAT Bridge Solutions Designer v15", page_icon="🌉", layout="wide")
+st.set_page_config(page_title="CAT Bridge Solutions Designer v16", page_icon="🌉", layout="wide")
 
 # ==============================================================================
 # 0. HYBRID DATA LIBRARY (RENTAL FLEET: GAS, DIESEL & DUAL FUEL)
+# Fuentes: Datasheets LEHX (Cat) & SMT (Solar Turbines)
 # ==============================================================================
 
 bridge_rental_library = {
@@ -111,6 +112,22 @@ bridge_rental_library = {
         "est_mob_kw": 50.0,
         "gas_pressure_min_psi": 0,
         "reactance_xd_2": 0.14
+    },
+    "XQ1140": {
+        "description": "Diesel Rental Set (C32) - Compact",
+        "fuels": ["Diesel"],
+        "type": "High Speed",
+        "iso_rating_mw": {60: 0.91, 50: 0.8}, 
+        "electrical_efficiency": 0.360,
+        "heat_rate_lhv": 9480,
+        "step_load_pct": 100.0,
+        "emissions_nox": 4.0,
+        "emissions_co": 1.0,
+        "default_for": 1.0, "default_maint": 3.0,
+        "est_asset_value_kw": 500.0,
+        "est_mob_kw": 40.0,
+        "gas_pressure_min_psi": 0,
+        "reactance_xd_2": 0.12
     }
 }
 
@@ -140,7 +157,7 @@ else:
     u_press = "Bar"
 
 t = {
-    "title": f"🌉 CAT Bridge Solutions Designer v15 ({freq_hz}Hz)",
+    "title": f"🌉 CAT Bridge Solutions Designer v16 ({freq_hz}Hz)",
     "subtitle": "**Time-to-Market Accelerator.**\nEngineering, Logistics & Financial Strategy for Bridge Power.",
     "sb_1": "1. Data Center Profile",
     "sb_2": "2. Technology & Fuel",
@@ -263,7 +280,6 @@ with st.sidebar:
     # --- 3. SITE ---
     st.header(t["sb_3"])
     
-    # PRIME LOGIC: Advanced Derating
     derate_mode = st.radio("Derate Method", ["Auto-Calculate", "Manual Entry"])
     derate_factor_calc = 1.0
     
@@ -641,7 +657,6 @@ with t2:
         st.dataframe(df_foot.style.format({f"Area ({u_as})": "{:,.0f}"}), use_container_width=True)
         st.metric("TOTAL LAND REQUIRED", f"{d_area_l:.2f} {u_al}")
         
-        
     with c_e2:
         st.subheader("Emissions & Urea")
         st.write(f"NOx: {nox_tpy:.0f} Tons/yr")
@@ -664,14 +679,14 @@ with t2:
 with t3:
     st.header("💰 Time-to-Market Analysis (Bridge Phase)")
     
-    # 1. Waterfall Chart for Net Benefit
+    # 1. Waterfall Chart for Net Benefit (FIXED: NEGATIVE VALUES FOR COSTS)
     fig_water = go.Figure(go.Waterfall(
         name = "20", orientation = "v",
         measure = ["relative", "relative", "relative", "total"],
         x = ["Gross Revenue Gained", "Bridge Energy Premium", "Setup & Mob Cost", "NET BENEFIT"],
         textposition = "outside",
         text = [f"+{gross_revenue_gain/1e6:.1f}M", f"-{cost_of_bridge_premium:.1f}M", f"-{capex_setup_m:.1f}M", f"${net_benefit_m:.1f}M"],
-        y = [gross_revenue_gain/1e6, -cost_of_bridge_premium, -capex_setup_m, net_benefit_m],
+        y = [gross_revenue_gain/1e6, -cost_of_bridge_premium, -capex_setup_m, net_benefit_m], # FIXED HERE
         connector = {"line":{"color":"rgb(63, 63, 63)"}},
     ))
     fig_water.update_layout(title = f"Value Created by Deploying {months_saved} Months Early", showlegend = False)
@@ -706,4 +721,4 @@ with t4:
 
 # --- FOOTER ---
 st.markdown("---")
-st.caption("CAT Bridge Solutions Designer v15 | Powered by Prime Engineering Engine")
+st.caption("CAT Bridge Solutions Designer v16 | Powered by Prime Engineering Engine")
