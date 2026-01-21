@@ -6,7 +6,7 @@ import plotly.express as px
 import plotly.graph_objects as go
 
 # --- PAGE CONFIGURATION ---
-st.set_page_config(page_title="CAT Primary Power Solutions v56", page_icon="⚡", layout="wide")
+st.set_page_config(page_title="CAT Primary Power Solutions v57", page_icon="⚡", layout="wide")
 
 # ==============================================================================
 # 0. HYBRID DATA LIBRARY
@@ -171,6 +171,9 @@ with st.sidebar:
     def_use_bess = True if is_ai else False
     
     p_it = st.number_input("Critical IT Load (MW)", 1.0, 1000.0, 100.0, step=10.0)
+    # MOVED DC AUX HERE
+    dc_aux_pct = st.number_input("DC Aux (%)", 0.0, 20.0, 5.0) / 100.0
+    
     avail_req = st.number_input("Required Availability (%)", 90.0, 99.99999, 99.99, format="%.5f")
     step_load_req = st.number_input("Step Load Req (%)", 0.0, 100.0, def_step_load)
     
@@ -261,6 +264,11 @@ with st.sidebar:
         hr_btu = hr_user / hr_conv_factor
         final_elec_eff = 3412.14 / hr_btu
 
+    # MOVED LOSSES & PARASITICS HERE
+    c_aux1, c_aux2 = st.columns(2)
+    dist_loss_pct = c_aux1.number_input("Dist Loss (%)", 0.0, 10.0, 1.0) / 100.0
+    gen_parasitic_pct = c_aux2.number_input("Parasitics (%)", 0.0, 10.0, 2.5) / 100.0
+
     # Costs & Params
     c_c1, c_c2 = st.columns(2)
     gen_unit_cost = c_c1.number_input("Equip ($/kW)", 100.0, 3000.0, eng_data['est_cost_kw'], step=10.0)
@@ -275,7 +283,6 @@ with st.sidebar:
         c_r1, c_r2 = st.columns(2)
         maint_outage_pct = c_r1.number_input("Maint (%)", 0.0, 20.0, float(eng_data.get('default_maint', 5.0))) / 100.0
         forced_outage_pct = c_r2.number_input("FOR (%)", 0.0, 20.0, float(eng_data.get('default_for', 2.0))) / 100.0
-        gen_parasitic_pct = st.number_input("Parasitics (%)", 0.0, 10.0, 2.5) / 100.0
 
     # BESS Section
     st.markdown("🔋 **BESS Strategy**")
@@ -337,9 +344,6 @@ with st.sidebar:
         cooling_method = st.selectbox("Cooling Tech", ["Water Cooled", "Air Cooled"], index=cool_idx)
         def_pue = 1.25 if "Water" in cooling_method else 1.45
         pue_input = st.number_input("Expected PUE", 1.05, 2.0, def_pue)
-        
-    dc_aux_pct = st.number_input("DC Aux (%)", 0.0, 20.0, 5.0) / 100.0
-    dist_loss_pct = st.number_input("Dist Loss (%)", 0.0, 10.0, 1.0) / 100.0
 
     # Emission Solutions
     with st.expander("Emission Hardware"):
@@ -367,12 +371,6 @@ with st.sidebar:
     c_e1, c_e2 = st.columns(2)
     project_years = c_e1.number_input("Years", 5, 30, 20)
     wacc = c_e2.number_input("WACC (%)", 0.0, 15.0, 8.0) / 100.0
-
-    with st.expander("Post-Grid Options"):
-        buyout_pct = st.number_input("Buyout %", 0.0, 100.0, 20.0)
-        ref_new_capex = eng_data['est_cost_kw']
-        vpp_arb_spread = st.number_input("VPP Arb ($/MWh)", 0.0, 200.0, 40.0)
-        vpp_cap_pay = st.number_input("VPP Cap ($/MW-yr)", 0.0, 100000.0, 28000.0)
 
 # ==============================================================================
 # 2. CALCULATION ENGINE (PRIME PHYSICS ENGINE v2)
@@ -854,7 +852,7 @@ with t2:
                 
                 c_opt1, c_opt2, c_opt3 = st.columns(3)
                 
-                # Scenario A
+                # Scenario A (Conditional)
                 if has_lng_storage and savings_lng > 0:
                     c_opt1.warning("Option A: Remove LNG Backup")
                     c_opt1.write(f"Save ~{savings_lng*(10.764 if is_imperial else 1):,.0f} {u_area_s}")
@@ -998,4 +996,4 @@ with t4:
 
 # --- FOOTER ---
 st.markdown("---")
-st.caption("CAT Primary Power Solutions | v2026.56 | Fixed Heat Rate Loop")
+st.caption("CAT Primary Power Solutions | v2026.57 | Clean Layout")
