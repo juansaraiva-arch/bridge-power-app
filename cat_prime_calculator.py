@@ -116,7 +116,7 @@ leps_gas_library = {
 # ==============================================================================
 
 with st.sidebar:
-    st.image("https://img.icons8.com/color/96/generator.png", width=60)
+    st.image("[https://img.icons8.com/color/96/generator.png](https://img.icons8.com/color/96/generator.png)", width=60)
     st.header("Global Settings")
     c_glob1, c_glob2 = st.columns(2)
     unit_system = c_glob1.radio("Units", ["Metric (SI)", "Imperial (US)"])
@@ -894,5 +894,4 @@ with t4:
 
 # --- FOOTER ---
 st.markdown("---")
-st.caption("CAT Prime Solution Designer | v2026.43 | Advanced BESS Financials (Repowering & O&M)")
-``` ```
+st.caption("CAT Prime Solution Designer | v2026.43 | Fixed Code Block Syntax")
