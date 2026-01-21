@@ -131,15 +131,15 @@ if is_imperial:
     u_vol, u_mass, u_power = "gal", "Short Tons", "MW"
     u_energy, u_therm, u_water = "MWh", "MMBtu", "gal/day"
     u_press = "psig"
-    u_hr = "Btu/kWh"
-    hr_conv_factor = 1.0
 else:
     u_temp, u_dist, u_area_s, u_area_l = "°C", "m", "m²", "Ha"
     u_vol, u_mass, u_power = "m³", "Tonnes", "MW"
     u_energy, u_therm, u_water = "MWh", "GJ", "m³/day"
     u_press = "Bar"
-    u_hr = "kJ/kWh"
-    hr_conv_factor = 1.055056 # Convert Btu to kJ
+
+# Heat Rate Units for Input Display (Internal calc is always Btu)
+u_hr_input = "Btu/kWh" if is_imperial else "kJ/kWh"
+hr_conv_input = 1.0 if is_imperial else 1.055056
 
 t = {
     "title": f"⚡ CAT Primary Power Solutions ({freq_hz}Hz)",
@@ -195,14 +195,14 @@ with st.sidebar:
     st.caption(f"**{eng_data['description']}**")
     
     # Efficiency & Rating
-    eff_input_method = st.radio("Efficiency Input Mode", ["Efficiency (%)", f"Heat Rate LHV ({u_hr})"])
+    eff_input_method = st.radio("Efficiency Input Mode", ["Efficiency (%)", f"Heat Rate LHV ({u_hr_input})"])
     
     def_mw = eng_data['iso_rating_mw']
     def_eff_pct = eng_data['electrical_efficiency'] * 100.0
     
-    # Display default HR in correct unit
-    def_hr_base = eng_data['heat_rate_lhv'] 
-    def_hr_disp = def_hr_base * hr_conv_factor
+    # Display default HR in correct unit for reference
+    def_hr_base = eng_data['heat_rate_lhv'] # Always Btu
+    def_hr_disp = def_hr_base * hr_conv_input
     
     col_t1, col_t2 = st.columns(2)
     unit_size_iso = col_t1.number_input("Rating (ISO MW)", 0.1, 100.0, def_mw, format="%.2f")
@@ -212,8 +212,9 @@ with st.sidebar:
         eff_user = col_t2.number_input("Eff (ISO %)", 20.0, 65.0, def_eff_pct, format="%.1f")
         final_elec_eff = eff_user / 100.0
     else:
-        hr_user = col_t2.number_input(f"HR ({u_hr})", 5000.0, 15000.0, def_hr_disp, format="%.0f")
-        hr_btu = hr_user / hr_conv_factor
+        hr_user = col_t2.number_input(f"HR ({u_hr_input})", 5000.0, 15000.0, def_hr_disp, format="%.0f")
+        # Convert back to Btu for calculation engine
+        hr_btu = hr_user / hr_conv_input
         final_elec_eff = 3412.14 / hr_btu
 
     # ASSET VALUATION
@@ -556,9 +557,9 @@ total_fuel_input_mmbtu_hr = p_gross_total * (gross_hr_lhv / 1000)
 net_hr_lhv = (total_fuel_input_mmbtu_hr * 1e6) / p_net_req
 net_hr_hhv = net_hr_lhv * 1.108
 
-# Display Heat Rate logic (Rounding UP and removing decimals)
-disp_hr_val = math.ceil(net_hr_lhv * hr_conv_factor)
-disp_hr_unit = u_hr 
+# Display Heat Rate logic (Double Units: MJ and Btu)
+hr_mj = net_hr_lhv * 0.001055056 # Convert Btu/kWh to MJ/kWh
+hr_btu = net_hr_lhv # Keep in Btu/kWh
 
 # --- E. SHORT CIRCUIT ---
 gen_mva_total = installed_cap / 0.8
@@ -760,7 +761,7 @@ else:
 c1, c2, c3, c4 = st.columns(4)
 c1.metric(t["kpi_net"], f"{p_net_req:.1f} MW", f"Gross: {p_gross_total:.1f} MW")
 # Dynamic HR Unit (Rounded Up)
-c2.metric(f"Net Heat Rate ({disp_hr_unit})", f"{disp_hr_val:,.0f}", f"Eff: {gross_eff_site*100:.1f}%")
+c2.metric("Net Heat Rate", f"{hr_mj:.2f} MJ/kWh", f"{hr_btu:,.0f} Btu/kWh")
 c3.metric("Rec. Voltage", rec_voltage, f"Isc: {isc_ka:.1f} kA")
 c4.metric(t["kpi_pue"], f"{pue_calc:.3f}", f"Cooling: {cooling_mode}")
 
@@ -954,4 +955,4 @@ with t4:
 
 # --- FOOTER ---
 st.markdown("---")
-st.caption("CAT Primary Power Solutions | v2026.46 | Clean & Precise")
+st.caption("CAT Primary Power Solutions | v2026.47 | Multi-Unit Heat Rate Display")
