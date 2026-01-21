@@ -6,7 +6,7 @@ import plotly.express as px
 import plotly.graph_objects as go
 
 # --- PAGE CONFIGURATION ---
-st.set_page_config(page_title="CAT Primary Power Solutions", page_icon="⚡", layout="wide")
+st.set_page_config(page_title="CAT Primary Power Solutions v49", page_icon="⚡", layout="wide")
 
 # ==============================================================================
 # 0. HYBRID DATA LIBRARY
@@ -200,8 +200,8 @@ with st.sidebar:
     def_mw = eng_data['iso_rating_mw']
     def_eff_pct = eng_data['electrical_efficiency'] * 100.0
     
-    # Display default HR in correct unit for reference
-    def_hr_base = eng_data['heat_rate_lhv'] # Always Btu
+    # Display default HR in correct unit
+    def_hr_base = eng_data['heat_rate_lhv'] 
     def_hr_disp = def_hr_base * hr_conv_factor
     
     col_t1, col_t2 = st.columns(2)
@@ -213,7 +213,6 @@ with st.sidebar:
         final_elec_eff = eff_user / 100.0
     else:
         hr_user = col_t2.number_input(f"HR ({u_hr})", 5000.0, 15000.0, def_hr_disp, format="%.0f")
-        # Convert back to Btu for calculation engine
         hr_btu = hr_user / hr_conv_factor
         final_elec_eff = 3412.14 / hr_btu
 
@@ -227,7 +226,6 @@ with st.sidebar:
     st.markdown("⚙️ **Technical Parameters**")
     col_p1, col_p2 = st.columns(2)
     step_load_cap = col_p1.number_input("Step Load Cap (%)", 0.0, 100.0, eng_data['step_load_pct'])
-    # PRECISION UPDATE: 5 decimals for Impedance
     xd_2_pu = col_p2.number_input('Xd" (pu)', 0.01000, 0.50000, eng_data.get('reactance_xd_2', 0.15), step=0.001, format="%.5f")
 
     # Reliability
@@ -559,19 +557,9 @@ total_fuel_input_mmbtu_hr = p_gross_total * (gross_hr_lhv / 1000)
 net_hr_lhv = (total_fuel_input_mmbtu_hr * 1e6) / (p_net_req * 1000)
 net_hr_hhv = net_hr_lhv * 1.108
 
-# Display Heat Rate logic (Correct logic for switching units)
-if is_imperial:
-    # Primary: Btu, Secondary: MJ
-    hr_primary = math.ceil(net_hr_lhv)
-    unit_primary = "Btu/kWh"
-    hr_secondary = net_hr_lhv * 0.001055056 
-    unit_secondary = "MJ/kWh"
-else:
-    # Primary: MJ, Secondary: Btu
-    hr_primary = net_hr_lhv * 0.001055056
-    unit_primary = "MJ/kWh"
-    hr_secondary = math.ceil(net_hr_lhv)
-    unit_secondary = "Btu/kWh"
+# Display Heat Rate logic (Double Units: MJ and Btu)
+hr_mj = net_hr_lhv * 0.001055056 # Convert Btu/kWh to MJ/kWh
+hr_btu = net_hr_lhv # Keep in Btu/kWh
 
 # --- E. SHORT CIRCUIT ---
 gen_mva_total = installed_cap / 0.8
@@ -772,12 +760,8 @@ else:
 # --- TOP KPIS ---
 c1, c2, c3, c4 = st.columns(4)
 c1.metric(t["kpi_net"], f"{p_net_req:.1f} MW", f"Gross: {p_gross_total:.1f} MW")
-# Dynamic HR Unit (Rounded Up) - Swaps primary based on selection
-if is_imperial:
-    c2.metric(f"Net Heat Rate ({unit_primary})", f"{hr_primary:,.0f}", f"{hr_secondary:.2f} {unit_secondary}")
-else:
-    c2.metric(f"Net Heat Rate ({unit_primary})", f"{hr_primary:.2f}", f"{hr_secondary:,.0f} {unit_secondary}")
-
+# Dynamic HR Unit (Rounded Up)
+c2.metric("Net Heat Rate", f"{hr_mj:.2f} MJ/kWh", f"{hr_btu:,.0f} Btu/kWh")
 c3.metric("Rec. Voltage", rec_voltage, f"Isc: {isc_ka:.1f} kA")
 c4.metric(t["kpi_pue"], f"{pue_calc:.3f}", f"Cooling: {cooling_mode}")
 
@@ -853,6 +837,8 @@ with t2:
             ]
         })
         st.dataframe(df_foot.style.format({f"Area ({u_area_s})": "{:,.0f}"}), use_container_width=True)
+        # Added Total Footprint Display
+        st.metric("Total Land Requirement", f"{footprint_large_val:.2f} {footprint_unit}")
 
     with col2:
         st.subheader("Emissions & Urea")
@@ -864,11 +850,19 @@ with t2:
         else:
             st.success("No SCR Required.")
             
-        st.subheader("Noise")
+        st.subheader("Noise Mitigation")
         if noise_rec > noise_limit:
-            st.error(f"🛑 **Noise Fail:** {noise_rec:.1f} dBA (Limit {noise_limit})")
+            excess_noise = noise_rec - noise_limit
+            st.error(f"🛑 **Exceeds Limit by {excess_noise:.1f} dB**")
+            
+            # Mitigation Calc
+            req_wall_height = 2.0 + (excess_noise / 1.5)
+            st.warning(f"🚧 **Mitigation Option A (Wall):** Build a sound barrier approx **{req_wall_height:.1f}m** high.")
+            
+            req_stack_lift = excess_noise * 0.5 
+            st.warning(f"🏭 **Mitigation Option B (Stack):** Increase stack height by **{req_stack_lift:.1f}m** (plus secondary silencer).")
         else:
-            st.success(f"✅ **Noise OK:** {noise_rec:.1f} dBA")
+            st.success(f"✅ **Noise OK:** {noise_rec:.1f} dBA (Limit {noise_limit})")
 
 with t3:
     st.subheader("Cooling & Tri-Generation")
@@ -971,4 +965,4 @@ with t4:
 
 # --- FOOTER ---
 st.markdown("---")
-st.caption("CAT Primary Power Solutions | v2026.48 | Corrected Heat Rate Logic")
+st.caption("CAT Primary Power Solutions | v2026.49 | Noise Mitigation & Area Calc")
