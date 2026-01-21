@@ -6,7 +6,7 @@ import plotly.express as px
 import plotly.graph_objects as go
 
 # --- PAGE CONFIGURATION ---
-st.set_page_config(page_title="CAT Prime Solution Designer v40", page_icon="⚡", layout="wide")
+st.set_page_config(page_title="CAT Prime Solution Designer v42", page_icon="⚡", layout="wide")
 
 # ==============================================================================
 # 0. HYBRID DATA LIBRARY
@@ -137,7 +137,7 @@ else:
     u_press = "Bar"
 
 t = {
-    "title": f"⚡ CAT Prime Solution Designer v40 ({freq_hz}Hz)",
+    "title": f"⚡ CAT Prime Solution Designer v42 ({freq_hz}Hz)",
     "subtitle": "**Sovereign Energy Solutions.**\nAdvanced modeling for Off-Grid Microgrids, Tri-Generation, and Gas Infrastructure.",
     "sb_1": "1. Data Center Profile",
     "sb_2": "2. Generation Technology",
@@ -174,7 +174,7 @@ with st.sidebar:
 
     st.divider()
 
-    # --- 2. GENERATION TECHNOLOGY (CONSOLIDATED) ---
+    # --- 2. GENERATION TECHNOLOGY ---
     st.header(t["sb_2"])
     
     selected_model = st.selectbox("Select CAT/Solar Model", list(leps_gas_library.keys()))
@@ -308,12 +308,29 @@ with st.sidebar:
     
     bess_maint_pct = 0.0
     bess_for_pct = 0.0
+    # BESS Costing vars initialization
+    bess_cost_kwh = 0.0
+    bess_cost_kw = 0.0
+    bess_life_batt = 10
+    bess_life_inv = 15
+    bess_om_kw_yr = 0.0
     
     if use_bess:
-        st.markdown("🔋 **BESS Reliability Parameters**")
+        st.markdown("🔋 **BESS Reliability & O&M**")
         c_b1, c_b2 = st.columns(2)
-        bess_maint_pct = c_b1.number_input("BESS Maint. Unavail (%)", 0.0, 10.0, 1.0, help="Planned downtime per year") / 100.0
-        bess_for_pct = c_b2.number_input("BESS Forced Outage Rate (%)", 0.0, 10.0, 0.5, help="Unexpected failure rate") / 100.0
+        bess_maint_pct = c_b1.number_input("BESS Maint. Unavail (%)", 0.0, 10.0, 1.0) / 100.0
+        bess_for_pct = c_b2.number_input("BESS Forced Outage Rate (%)", 0.0, 10.0, 0.5) / 100.0
+        
+        st.markdown("💲 **BESS Economics & Lifecycle**")
+        c_c1, c_c2 = st.columns(2)
+        bess_cost_kwh = c_c1.number_input("Battery Cost ($/kWh)", 100.0, 1000.0, 280.0, help="Energy Block Cost")
+        bess_cost_kw = c_c2.number_input("Inverter Cost ($/kW)", 50.0, 1000.0, 120.0, help="PCS/Power Block Cost")
+        
+        c_l1, c_l2 = st.columns(2)
+        bess_life_batt = c_l1.number_input("Battery Useful Life (Yrs)", 5, 20, 10, help="Replacement cycle for cells")
+        bess_life_inv = c_l2.number_input("Inverter Useful Life (Yrs)", 5, 25, 15)
+        
+        bess_om_kw_yr = st.number_input("BESS Fixed O&M ($/kW-yr)", 0.0, 100.0, 10.0)
 
     st.divider()
 
@@ -363,7 +380,6 @@ with st.sidebar:
     # Buyout Params
     st.caption("Post-Grid Strategy Options")
     buyout_pct = st.number_input("Buyout Residual Value (%)", 0.0, 100.0, 20.0)
-    # FIX KEY ERROR: Use est_cost_kw instead of est_asset_value_kw
     ref_new_capex = eng_data['est_cost_kw']
     vpp_arb_spread = st.number_input("VPP Arbitrage ($/MWh)", 0.0, 200.0, 40.0)
     vpp_cap_pay = st.number_input("VPP Capacity ($/MW-yr)", 0.0, 100000.0, 28000.0)
@@ -409,8 +425,8 @@ if use_bess:
     n_base_mw = p_gen_bus_req / (1 - gen_parasitic_pct) 
     n_running = math.ceil(n_base_mw / (unit_site_cap * target_load_factor))
     
-    bess_power = max(step_mw_req, unit_site_cap) 
-    bess_energy = bess_power * 2 
+    bess_power_req = max(step_mw_req, unit_site_cap) 
+    
     driver_txt = "Steady State (BESS Optimized)"
 else:
     # NO BESS - HARD CONSTRAINTS
@@ -436,42 +452,57 @@ else:
     elif n_running == n_headroom: driver_txt = "Spinning Reserve (Headroom)"
     else: driver_txt = "Steady State Load"
     
-    bess_power = 0; bess_energy = 0
+    bess_power_req = 0
 
-# --- C. RELIABILITY (PROBABILISTIC - GEN + BESS HYBRID) ---
+# --- C. RELIABILITY (PROBABILISTIC - GEN + BESS HYBRID LOOP) ---
 n_maint = math.ceil(n_running * maint_outage_pct) 
 
-# Generator Reliability Loop
-prob_unit_avail = 1.0 - forced_outage_pct
+prob_gen_unit = 1.0 - forced_outage_pct
+prob_bess_unit = 1.0 - (bess_maint_pct + bess_for_pct)
 target_reliability = avail_req / 100.0
-n_reserve = 0
+
+n_reserve_gen = 0
+n_redundant_bess = 0 
 
 while True:
-    n_pool = n_running + n_reserve
-    prob_success = 0.0
-    for k in range(n_running, n_pool + 1):
-        comb = math.comb(n_pool, k)
-        prob = comb * (prob_unit_avail ** k) * ((1 - prob_unit_avail) ** (n_pool - k))
-        prob_success += prob
-    if prob_success >= target_reliability: break
-    n_reserve += 1
-    if n_reserve > 20: break 
+    # 1. Calc Generator Reliability
+    n_pool_gen = n_running + n_reserve_gen
+    prob_gen_sys = 0.0
+    for k in range(n_running, n_pool_gen + 1):
+        comb = math.comb(n_pool_gen, k)
+        prob = comb * (prob_gen_unit ** k) * ((1 - prob_gen_unit) ** (n_pool_gen - k))
+        prob_gen_sys += prob
+        
+    # 2. Calc BESS Reliability
+    if use_bess:
+        p_fail_bess_unit = 1.0 - prob_bess_unit
+        prob_bess_sys = 1.0 - (p_fail_bess_unit ** (1 + n_redundant_bess))
+    else:
+        prob_bess_sys = 1.0
+        
+    # 3. Combined System Reliability
+    system_reliability = prob_gen_sys * prob_bess_sys
+    
+    if system_reliability >= target_reliability:
+        break
+        
+    if use_bess and (prob_bess_sys < prob_gen_sys):
+        n_redundant_bess += 1
+    else:
+        n_reserve_gen += 1
+        
+    if n_reserve_gen > 25 or n_redundant_bess > 10: break
 
-# Total System Reliability Logic
-system_reliability_pct = prob_success * 100.0
-reliability_bottleneck = "Generators"
-
-if use_bess:
-    bess_avail = 1.0 - (bess_maint_pct + bess_for_pct)
-    hybrid_reliability = prob_success * bess_avail
-    system_reliability_pct = hybrid_reliability * 100.0
-    if bess_avail < prob_success:
-        reliability_bottleneck = "BESS Availability"
-
-n_total = n_running + n_maint + n_reserve
+n_total = n_running + n_maint + n_reserve_gen
 installed_cap = n_total * unit_site_cap
+system_reliability_pct = system_reliability * 100.0
 
-# --- D. THERMODYNAMICS (AGGRESSIVE CURVE) ---
+# BESS Final Sizing
+bess_multiplier = 1 + n_redundant_bess
+bess_power_total = bess_power_req * bess_multiplier
+bess_energy_total = bess_power_total * 2 
+
+# --- D. THERMODYNAMICS ---
 total_parasitics_mw = n_running * (unit_size_iso * gen_parasitic_pct)
 p_gross_total = p_gen_bus_req + total_parasitics_mw
 real_load_factor = p_gross_total / (n_running * unit_site_cap)
@@ -574,17 +605,29 @@ if force_oxicat:
 # --- I. FOOTPRINT ---
 area_gen = n_total * 200 
 area_chp = total_cooling_mw * 20 if include_chp else (p_net_req * 10) 
-area_bess = bess_power * 30 
+area_bess = bess_power_total * 30 
 area_sub = 2500
 total_area_m2 = (area_gen + storage_area_m2 + area_chp + area_bess + area_sub) * 1.2
 
-# --- J. FINANCIALS & NPV ---
+# --- J. FINANCIALS & NPV (ENHANCED BESS COSTING) ---
 base_gen_cost_kw = gen_unit_cost 
 gen_cost_total = (installed_cap * 1000) * base_gen_cost_kw / 1e6 
 
 idx_install = (gen_install_cost / gen_unit_cost) * switchgear_cost_factor
 idx_chp = 0.20 if include_chp else 0
-idx_bess = 0.30 if use_bess else 0
+
+# --- NEW: BESS DETAILED CAPEX CALC ---
+bess_capex_m = 0.0
+bess_om_annual = 0.0
+if use_bess:
+    # Cost = (Power * Cost_Inv) + (Energy * Cost_Batt)
+    cost_power_part = (bess_power_total * 1000) * bess_cost_kw
+    cost_energy_part = (bess_energy_total * 1000) * bess_cost_kwh
+    bess_capex_m = (cost_power_part + cost_energy_part) / 1e6
+    
+    # O&M
+    bess_om_annual = (bess_power_total * 1000 * bess_om_kw_yr) # Annual fixed cost
+
 pipe_cost_m = 50 * rec_pipe_dia 
 pipeline_capex_m = (pipe_cost_m * dist_gas_main_m) / 1e6 if virtual_pipe_mode == "Pipeline" else 0
 
@@ -592,23 +635,43 @@ cost_items = [
     {"Item": "Generation Units", "Default Index": 1.00, "Cost (M USD)": gen_cost_total},
     {"Item": "Installation & BOP", "Default Index": idx_install, "Cost (M USD)": gen_cost_total * idx_install},
     {"Item": "Tri-Gen Plant", "Default Index": idx_chp, "Cost (M USD)": gen_cost_total * idx_chp},
-    {"Item": "BESS System", "Default Index": idx_bess, "Cost (M USD)": gen_cost_total * idx_bess},
+    {"Item": "BESS System", "Default Index": 0.0, "Cost (M USD)": bess_capex_m}, # Explicit Cost
     {"Item": "Logistics/Fuel Infra", "Default Index": 0.0, "Cost (M USD)": (log_capex + pipeline_capex_m * 1e6)/1e6},
     {"Item": "Emissions Control", "Default Index": 0.0, "Cost (M USD)": at_capex_total / 1e6},
 ]
 df_capex_base = pd.DataFrame(cost_items)
 
-# LCOE
+# --- REPOWERING CASH FLOW (REPLACEMENT CAPEX) ---
+# Calculate Present Value of future replacements
+repowering_pv_m = 0.0
+if use_bess:
+    for year in range(1, project_years + 1):
+        year_cost = 0.0
+        # Battery Replacement
+        if year % bess_life_batt == 0 and year < project_years:
+            year_cost += (bess_energy_total * 1000 * bess_cost_kwh)
+        # Inverter Replacement
+        if year % bess_life_inv == 0 and year < project_years:
+            year_cost += (bess_power_total * 1000 * bess_cost_kw)
+            
+        if year_cost > 0:
+            # Discount to PV
+            repowering_pv_m += (year_cost / 1e6) / ((1 + wacc) ** year)
+
+# Annualize Repowering for LCOE
+crf = (wacc * (1 + wacc)**project_years) / ((1 + wacc)**project_years - 1)
+repowering_annualized = repowering_pv_m * 1e6 * crf 
+
+# LCOE Calculation
 mwh_year = p_net_req * 8760
 fuel_cost_year = total_fuel_input_mmbtu_hr * gas_price * 8760
-om_cost_year = mwh_year * om_var_price 
+om_cost_year = (mwh_year * om_var_price) + bess_om_annual # Added BESS O&M
 
 # Initial Total CAPEX calc for display
 initial_capex_sum = df_capex_base["Cost (M USD)"].sum()
-crf = (wacc * (1 + wacc)**project_years) / ((1 + wacc)**project_years - 1)
 capex_annualized = (initial_capex_sum * 1e6) * crf
 
-total_annual_cost = fuel_cost_year + om_cost_year + capex_annualized
+total_annual_cost = fuel_cost_year + om_cost_year + capex_annualized + repowering_annualized
 lcoe = total_annual_cost / (mwh_year * 1000)
 
 # NPV Logic
@@ -620,7 +683,9 @@ if wacc > 0:
     pv_savings = annual_savings * ((1 - (1 + wacc)**-project_years) / wacc)
 else:
     pv_savings = annual_savings * project_years
-npv = pv_savings - (initial_capex_sum * 1e6)
+
+# NPV = PV(Savings) - Initial CAPEX - PV(Repowering)
+npv = pv_savings - (initial_capex_sum * 1e6) - (repowering_pv_m * 1e6)
 
 # Payback
 if annual_savings > 0:
@@ -695,7 +760,9 @@ with t1:
             st.error(f"⚠️ Bottleneck: {reliability_bottleneck}. Consider redundant BESS or more Gens.")
         
         if use_bess:
-            st.info(f"⚡ **BESS:** {bess_power:.1f} MW / {bess_energy:.1f} MWh")
+            st.info(f"⚡ **BESS:** {bess_power_total:.1f} MW / {bess_energy_total:.1f} MWh")
+            if n_redundant_bess > 0:
+                st.warning(f"⚠️ **High Availability:** {n_redundant_bess} Redundant BESS Units Added.")
         
         if not use_bess and real_load_factor < 0.50:
             st.error("⛔ **RICE RISK:** LF < 50%. Wet Stacking Danger.")
@@ -776,7 +843,7 @@ with t4:
     final_capex_df = edited_capex.copy()
     total_capex_dynamic = 0
     for index, row in final_capex_df.iterrows():
-        if row['Item'] in ["Logistics/Fuel Infra", "Gas Pipeline", "Emissions Control"]:
+        if row['Item'] in ["Logistics/Fuel Infra", "Gas Pipeline", "Emissions Control", "BESS System"]:
             total_capex_dynamic += row['Cost (M USD)']
         elif row['Item'] == "Generation Units":
             total_capex_dynamic += gen_cost_total
@@ -785,10 +852,10 @@ with t4:
     
     # Recalculate Financials based on edited CAPEX
     capex_annualized_dyn = (total_capex_dynamic * 1e6) * crf
-    total_annual_cost_dyn = fuel_cost_year + om_cost_year + capex_annualized_dyn
+    total_annual_cost_dyn = fuel_cost_year + om_cost_year + capex_annualized_dyn + repowering_annualized
     lcoe_dyn = total_annual_cost_dyn / (mwh_year * 1000)
     
-    npv_dyn = pv_savings - (total_capex_dynamic * 1e6)
+    npv_dyn = pv_savings - (total_capex_dynamic * 1e6) - (repowering_pv_m * 1e6)
     if annual_savings > 0:
         payback_years_dyn = (total_capex_dynamic * 1e6) / annual_savings
         roi_dyn = (annual_savings / (total_capex_dynamic * 1e6)) * 100
@@ -804,10 +871,18 @@ with t4:
     c_f4.metric("NPV (20yr)", f"${npv_dyn/1e6:.2f} M")
     c_f5.metric("Payback", payback_str_dyn, f"ROI: {roi_dyn:.1f}%")
     
+    if use_bess:
+        st.caption(f"ℹ️ **Repowering:** Includes NPV of battery replacement every {bess_life_batt} years.")
+
     # Chart
     cost_data = pd.DataFrame({
-        "Component": ["Fuel", "O&M (OPEX)", "CAPEX (Amortized)"],
-        "$/kWh": [fuel_cost_year/(mwh_year*1000), om_cost_year/(mwh_year*1000), capex_annualized_dyn/(mwh_year*1000)]
+        "Component": ["Fuel", "O&M (OPEX)", "CAPEX (Amortized)", "Repowering (Future)"],
+        "$/kWh": [
+            fuel_cost_year/(mwh_year*1000), 
+            om_cost_year/(mwh_year*1000), 
+            capex_annualized_dyn/(mwh_year*1000),
+            repowering_annualized/(mwh_year*1000)
+        ]
     })
     
     fig_bar = px.bar(cost_data, x="Component", y="$/kWh", color="Component", 
@@ -816,4 +891,7 @@ with t4:
 
 # --- FOOTER ---
 st.markdown("---")
-st.caption("CAT Prime Solution Designer | v2026.40 | Fixed Library Key")
+st.caption("CAT Prime Solution Designer | v2026.42 | Advanced BESS Financials (Repowering & O&M)")
+
+
+[Image of battery energy storage system]
