@@ -528,7 +528,11 @@ eff_factor = max(eff_factor, 0.50)
 gross_eff_site = base_eff * eff_factor
 gross_hr_lhv = 3412.14 / gross_eff_site
 
-total_fuel_input_mmbtu_hr = p_gross_total * (gross_hr_lhv / 1e6) 
+# --- FIX: FUEL CALCULATION (UNIT CONVERSION FIXED) ---
+# Input (MMBtu) = Power (MW) * 1000 (kW/MW) * HR (Btu/kWh) / 1,000,000 (Btu/MMBtu)
+# Input (MMBtu) = Power (MW) * HR (Btu/kWh) / 1000
+total_fuel_input_mmbtu_hr = p_gross_total * (gross_hr_lhv / 1000) 
+
 net_hr_lhv = (total_fuel_input_mmbtu_hr * 1e6) / p_net_req
 net_hr_hhv = net_hr_lhv * 1.108
 
@@ -890,4 +894,5 @@ with t4:
 
 # --- FOOTER ---
 st.markdown("---")
-st.caption("CAT Prime Solution Designer | v2026.42 | Advanced BESS Financials (Repowering & O&M)")
+st.caption("CAT Prime Solution Designer | v2026.43 | Advanced BESS Financials (Repowering & O&M)")
+``` ```
