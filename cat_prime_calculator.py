@@ -6,7 +6,7 @@ import plotly.express as px
 import plotly.graph_objects as go
 
 # --- PAGE CONFIGURATION ---
-st.set_page_config(page_title="CAT Prime Solution Designer v42", page_icon="⚡", layout="wide")
+st.set_page_config(page_title="CAT Prime Solution Designer v43", page_icon="⚡", layout="wide")
 
 # ==============================================================================
 # 0. HYBRID DATA LIBRARY
@@ -137,7 +137,7 @@ else:
     u_press = "Bar"
 
 t = {
-    "title": f"⚡ CAT Prime Solution Designer v42 ({freq_hz}Hz)",
+    "title": f"⚡ CAT Prime Solution Designer v43 ({freq_hz}Hz)",
     "subtitle": "**Sovereign Energy Solutions.**\nAdvanced modeling for Off-Grid Microgrids, Tri-Generation, and Gas Infrastructure.",
     "sb_1": "1. Data Center Profile",
     "sb_2": "2. Generation Technology",
@@ -493,9 +493,14 @@ while True:
         
     if n_reserve_gen > 25 or n_redundant_bess > 10: break
 
-n_total = n_running + n_maint + n_reserve_gen
+n_reserve = n_reserve_gen # ALIAS FIX
+n_total = n_running + n_maint + n_reserve
 installed_cap = n_total * unit_site_cap
 system_reliability_pct = system_reliability * 100.0
+
+reliability_bottleneck = "Generators" # Default init
+if use_bess and (prob_bess_sys < prob_gen_sys):
+    reliability_bottleneck = "BESS Availability"
 
 # BESS Final Sizing
 bess_multiplier = 1 + n_redundant_bess
@@ -616,17 +621,14 @@ gen_cost_total = (installed_cap * 1000) * base_gen_cost_kw / 1e6
 idx_install = (gen_install_cost / gen_unit_cost) * switchgear_cost_factor
 idx_chp = 0.20 if include_chp else 0
 
-# --- NEW: BESS DETAILED CAPEX CALC ---
+# BESS DETAILED CAPEX
 bess_capex_m = 0.0
 bess_om_annual = 0.0
 if use_bess:
-    # Cost = (Power * Cost_Inv) + (Energy * Cost_Batt)
     cost_power_part = (bess_power_total * 1000) * bess_cost_kw
     cost_energy_part = (bess_energy_total * 1000) * bess_cost_kwh
     bess_capex_m = (cost_power_part + cost_energy_part) / 1e6
-    
-    # O&M
-    bess_om_annual = (bess_power_total * 1000 * bess_om_kw_yr) # Annual fixed cost
+    bess_om_annual = (bess_power_total * 1000 * bess_om_kw_yr) 
 
 pipe_cost_m = 50 * rec_pipe_dia 
 pipeline_capex_m = (pipe_cost_m * dist_gas_main_m) / 1e6 if virtual_pipe_mode == "Pipeline" else 0
@@ -641,8 +643,7 @@ cost_items = [
 ]
 df_capex_base = pd.DataFrame(cost_items)
 
-# --- REPOWERING CASH FLOW (REPLACEMENT CAPEX) ---
-# Calculate Present Value of future replacements
+# REPOWERING CASH FLOW (REPLACEMENT CAPEX)
 repowering_pv_m = 0.0
 if use_bess:
     for year in range(1, project_years + 1):
@@ -655,17 +656,16 @@ if use_bess:
             year_cost += (bess_power_total * 1000 * bess_cost_kw)
             
         if year_cost > 0:
-            # Discount to PV
             repowering_pv_m += (year_cost / 1e6) / ((1 + wacc) ** year)
 
-# Annualize Repowering for LCOE
+# Annualize Repowering
 crf = (wacc * (1 + wacc)**project_years) / ((1 + wacc)**project_years - 1)
 repowering_annualized = repowering_pv_m * 1e6 * crf 
 
 # LCOE Calculation
 mwh_year = p_net_req * 8760
 fuel_cost_year = total_fuel_input_mmbtu_hr * gas_price * 8760
-om_cost_year = (mwh_year * om_var_price) + bess_om_annual # Added BESS O&M
+om_cost_year = (mwh_year * om_var_price) + bess_om_annual 
 
 # Initial Total CAPEX calc for display
 initial_capex_sum = df_capex_base["Cost (M USD)"].sum()
@@ -684,7 +684,6 @@ if wacc > 0:
 else:
     pv_savings = annual_savings * project_years
 
-# NPV = PV(Savings) - Initial CAPEX - PV(Repowering)
 npv = pv_savings - (initial_capex_sum * 1e6) - (repowering_pv_m * 1e6)
 
 # Payback
