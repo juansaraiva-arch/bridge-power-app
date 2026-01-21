@@ -6,7 +6,7 @@ import plotly.express as px
 import plotly.graph_objects as go
 
 # --- PAGE CONFIGURATION ---
-st.set_page_config(page_title="CAT Prime Solution Designer v39", page_icon="⚡", layout="wide")
+st.set_page_config(page_title="CAT Prime Solution Designer v40", page_icon="⚡", layout="wide")
 
 # ==============================================================================
 # 0. HYBRID DATA LIBRARY
@@ -137,7 +137,7 @@ else:
     u_press = "Bar"
 
 t = {
-    "title": f"⚡ CAT Prime Solution Designer v39 ({freq_hz}Hz)",
+    "title": f"⚡ CAT Prime Solution Designer v40 ({freq_hz}Hz)",
     "subtitle": "**Sovereign Energy Solutions.**\nAdvanced modeling for Off-Grid Microgrids, Tri-Generation, and Gas Infrastructure.",
     "sb_1": "1. Data Center Profile",
     "sb_2": "2. Generation Technology",
@@ -306,7 +306,6 @@ with st.sidebar:
     st.header(t["sb_4"])
     use_bess = st.checkbox("Include BESS (Synthetic Inertia)", value=def_use_bess)
     
-    # --- NEW: BESS RELIABILITY INPUTS ---
     bess_maint_pct = 0.0
     bess_for_pct = 0.0
     
@@ -364,7 +363,8 @@ with st.sidebar:
     # Buyout Params
     st.caption("Post-Grid Strategy Options")
     buyout_pct = st.number_input("Buyout Residual Value (%)", 0.0, 100.0, 20.0)
-    ref_new_capex = eng_data['est_asset_value_kw']
+    # FIX KEY ERROR: Use est_cost_kw instead of est_asset_value_kw
+    ref_new_capex = eng_data['est_cost_kw']
     vpp_arb_spread = st.number_input("VPP Arbitrage ($/MWh)", 0.0, 200.0, 40.0)
     vpp_cap_pay = st.number_input("VPP Capacity ($/MW-yr)", 0.0, 100000.0, 28000.0)
 
@@ -461,12 +461,10 @@ while True:
 system_reliability_pct = prob_success * 100.0
 reliability_bottleneck = "Generators"
 
-# Incorporate BESS Availability in Series
 if use_bess:
     bess_avail = 1.0 - (bess_maint_pct + bess_for_pct)
     hybrid_reliability = prob_success * bess_avail
     system_reliability_pct = hybrid_reliability * 100.0
-    
     if bess_avail < prob_success:
         reliability_bottleneck = "BESS Availability"
 
@@ -818,4 +816,4 @@ with t4:
 
 # --- FOOTER ---
 st.markdown("---")
-st.caption("CAT Prime Solution Designer | v2026.39 | Probabilistic Reliability Engine")
+st.caption("CAT Prime Solution Designer | v2026.40 | Fixed Library Key")
