@@ -6,7 +6,7 @@ import plotly.express as px
 import plotly.graph_objects as go
 
 # --- PAGE CONFIGURATION ---
-st.set_page_config(page_title="CAT Prime Solution Designer v43", page_icon="⚡", layout="wide")
+st.set_page_config(page_title="CAT Prime Solution Designer v44", page_icon="⚡", layout="wide")
 
 # ==============================================================================
 # 0. HYBRID DATA LIBRARY
@@ -116,7 +116,9 @@ leps_gas_library = {
 # ==============================================================================
 
 with st.sidebar:
-    st.image("[https://img.icons8.com/color/96/generator.png](https://img.icons8.com/color/96/generator.png)", width=60)
+    # FIXED IMAGE URL STRING
+    st.image("https://img.icons8.com/color/96/generator.png", width=60)
+    
     st.header("Global Settings")
     c_glob1, c_glob2 = st.columns(2)
     unit_system = c_glob1.radio("Units", ["Metric (SI)", "Imperial (US)"])
@@ -137,7 +139,7 @@ else:
     u_press = "Bar"
 
 t = {
-    "title": f"⚡ CAT Prime Solution Designer v43 ({freq_hz}Hz)",
+    "title": f"⚡ CAT Prime Solution Designer v44 ({freq_hz}Hz)",
     "subtitle": "**Sovereign Energy Solutions.**\nAdvanced modeling for Off-Grid Microgrids, Tri-Generation, and Gas Infrastructure.",
     "sb_1": "1. Data Center Profile",
     "sb_2": "2. Generation Technology",
@@ -894,4 +896,4 @@ with t4:
 
 # --- FOOTER ---
 st.markdown("---")
-st.caption("CAT Prime Solution Designer | v2026.43 | Fixed Code Block Syntax")
+st.caption("CAT Prime Solution Designer | v2026.44 | Clean Build")
