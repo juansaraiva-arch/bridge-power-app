@@ -6,7 +6,7 @@ import plotly.express as px
 import plotly.graph_objects as go
 
 # --- PAGE CONFIGURATION ---
-st.set_page_config(page_title="CAT Primary Power Solutions v52", page_icon="⚡", layout="wide")
+st.set_page_config(page_title="CAT Primary Power Solutions v55", page_icon="⚡", layout="wide")
 
 # ==============================================================================
 # 0. HYBRID DATA LIBRARY
@@ -231,6 +231,9 @@ with st.sidebar:
     if is_imperial: dist_neighbor_m = dist_neighbor_m / 3.28084
     noise_limit = 70.0 # Industrial default
 
+    # GRID IS REMOVED as per v54 instructions
+    # st.markdown("🔌 **Grid Connection**") removed.
+
     st.divider()
 
     # -------------------------------------------------------------------------
@@ -362,7 +365,7 @@ with st.sidebar:
         gas_price += vp_premium
 
     om_var_price = st.number_input("Var O&M ($/MWh)", 1.0, 50.0, 12.0)
-    grid_price = st.number_input("Grid Price ($/kWh)", 0.05, 0.50, 0.15)
+    grid_price = st.number_input("Grid Price ($/kWh)", 0.05, 0.50, 0.15, help="Used for Savings benchmark only")
     
     c_e1, c_e2 = st.columns(2)
     project_years = c_e1.number_input("Years", 5, 30, 20)
@@ -524,7 +527,7 @@ eff_factor = max(eff_factor, 0.50)
 gross_eff_site = base_eff * eff_factor
 gross_hr_lhv = 3412.14 / gross_eff_site
 
-# Fuel Calculation
+# Fuel Calculation (Fix)
 total_fuel_input_mmbtu_hr = p_gross_total * (gross_hr_lhv / 1000) 
 
 net_hr_lhv = (total_fuel_input_mmbtu_hr * 1e6) / (p_net_req * 1000)
@@ -534,11 +537,19 @@ net_hr_hhv = net_hr_lhv * 1.108
 hr_mj = net_hr_lhv * 0.001055056 # Convert Btu/kWh to MJ/kWh
 hr_btu = net_hr_lhv # Keep in Btu/kWh
 
-# --- E. SHORT CIRCUIT ---
+# --- E. SHORT CIRCUIT (FIXED v55) ---
 gen_mva_total = installed_cap / 0.8
 gen_sc_mva = gen_mva_total / xd_2_pu
-total_sc_mva = gen_sc_mva + grid_mva_sc
+
+# BESS SC Contribution
+bess_sc_mva = 0.0
+if use_bess:
+    # Logic: BESS Inverters contribute ~1.5x Rated MVA during fault
+    bess_sc_mva = bess_power_total * 1.5
+
+total_sc_mva = gen_sc_mva + bess_sc_mva
 isc_ka = total_sc_mva / (math.sqrt(3) * op_voltage_kv)
+
 rec_breaker = 63
 for b in [25, 31.5, 40, 50, 63]:
     if b > (isc_ka * 1.1): rec_breaker = b; break
@@ -672,12 +683,14 @@ mwh_year = p_net_req * 8760
 fuel_cost_year = total_fuel_input_mmbtu_hr * gas_price * 8760
 om_cost_year = (mwh_year * om_var_price) + bess_om_annual 
 
+# Initial Total CAPEX
 initial_capex_sum = df_capex_base["Cost (M USD)"].sum()
 capex_annualized = (initial_capex_sum * 1e6) * crf
 
 total_annual_cost = fuel_cost_year + om_cost_year + capex_annualized + repowering_annualized
 lcoe = total_annual_cost / (mwh_year * 1000)
 
+# NPV Logic
 annual_grid_cost = mwh_year * 1000 * grid_price
 annual_prime_opex = fuel_cost_year + om_cost_year
 annual_savings = annual_grid_cost - annual_prime_opex
@@ -689,6 +702,7 @@ else:
 
 npv = pv_savings - (initial_capex_sum * 1e6) - (repowering_pv_m * 1e6)
 
+# Payback
 if annual_savings > 0:
     payback_years = (initial_capex_sum * 1e6) / annual_savings
     roi_simple = (annual_savings / (initial_capex_sum * 1e6)) * 100
@@ -696,6 +710,7 @@ if annual_savings > 0:
 else:
     payback_str = "N/A"; roi_simple = 0
 
+# --- K. SENSITIVITY ANALYSIS (SWEET SPOT) ---
 annual_grid_revenue = mwh_year * 1000 * grid_price
 fixed_costs_annual = om_cost_year + capex_annualized + repowering_annualized
 fuel_mmbtu_annual = total_fuel_input_mmbtu_hr * 8760
@@ -705,7 +720,8 @@ if fuel_mmbtu_annual > 0:
 else:
     breakeven_gas_price = 0
 
-gas_prices_x = np.linspace(1, 20, 50) 
+# Generate Plot Data
+gas_prices_x = np.linspace(1, 20, 50) # $1 to $20 range
 lcoe_y = []
 for g in gas_prices_x:
     fc = fuel_mmbtu_annual * g
@@ -759,8 +775,10 @@ with t1:
         st.dataframe(df_bal.style.format({"MW": "{:.2f}"}), use_container_width=True)
         
         st.subheader("Electrical Sizing")
-        st.write(f"**Grid Contribution:** {grid_mva_sc} MVA")
+        st.write(f"**Grid Contribution:** None (Island Mode)")
         st.write(f"**Gen Contribution:** {gen_sc_mva:.1f} MVA (Xd\" {xd_2_pu})")
+        if use_bess:
+            st.write(f"**BESS Contribution:** {bess_sc_mva:.1f} MVA (Inv. Limit 1.5x)")
         st.markdown(f"**Total Short Circuit:** :red[**{isc_ka:.1f} kA**]")
         st.success(f"✅ Recommended Switchgear Rating: **{rec_breaker} kA**")
             
@@ -774,7 +792,6 @@ with t1:
         st.write(f"**S (Standby):** {n_reserve}")
         st.caption(f"Reserve: Probabilistic > {avail_req}% reliability.")
         
-        # Reliability Coloring
         if system_reliability_pct >= avail_req:
             st.metric("Total Installed Fleet", f"{n_total} Units", f"Reliability: {system_reliability_pct:.4f}% (OK)")
         else:
@@ -976,4 +993,4 @@ with t4:
 
 # --- FOOTER ---
 st.markdown("---")
-st.caption("CAT Primary Power Solutions | v2026.52 | Reorganized Layout")
+st.caption("CAT Primary Power Solutions | v2026.55 | Fixed SC Logic (Gen+BESS)")
