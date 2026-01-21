@@ -6,7 +6,7 @@ import plotly.express as px
 import plotly.graph_objects as go
 
 # --- PAGE CONFIGURATION ---
-st.set_page_config(page_title="CAT Primary Power Solutions v55", page_icon="⚡", layout="wide")
+st.set_page_config(page_title="CAT Primary Power Solutions v56", page_icon="⚡", layout="wide")
 
 # ==============================================================================
 # 0. HYBRID DATA LIBRARY
@@ -230,9 +230,6 @@ with st.sidebar:
     dist_neighbor_m = st.number_input(f"Dist. to Neighbor ({u_dist})", 10.0, 5000.0, 100.0)
     if is_imperial: dist_neighbor_m = dist_neighbor_m / 3.28084
     noise_limit = 70.0 # Industrial default
-
-    # GRID IS REMOVED as per v54 instructions
-    # st.markdown("🔌 **Grid Connection**") removed.
 
     st.divider()
 
@@ -533,9 +530,17 @@ total_fuel_input_mmbtu_hr = p_gross_total * (gross_hr_lhv / 1000)
 net_hr_lhv = (total_fuel_input_mmbtu_hr * 1e6) / (p_net_req * 1000)
 net_hr_hhv = net_hr_lhv * 1.108
 
-# Display Heat Rate logic (Double Units: MJ and Btu)
-hr_mj = net_hr_lhv * 0.001055056 # Convert Btu/kWh to MJ/kWh
-hr_btu = net_hr_lhv # Keep in Btu/kWh
+# Display Heat Rate logic (RESTORED FIX v56)
+if is_imperial:
+    hr_primary = math.ceil(net_hr_lhv)
+    unit_primary = "Btu/kWh"
+    hr_secondary = net_hr_lhv * 0.001055056 
+    unit_secondary = "MJ/kWh"
+else:
+    hr_primary = net_hr_lhv * 0.001055056
+    unit_primary = "MJ/kWh"
+    hr_secondary = math.ceil(net_hr_lhv)
+    unit_secondary = "Btu/kWh"
 
 # --- E. SHORT CIRCUIT (FIXED v55) ---
 gen_mva_total = installed_cap / 0.8
@@ -993,4 +998,4 @@ with t4:
 
 # --- FOOTER ---
 st.markdown("---")
-st.caption("CAT Primary Power Solutions | v2026.55 | Fixed SC Logic (Gen+BESS)")
+st.caption("CAT Primary Power Solutions | v2026.56 | Fixed Heat Rate Loop")
