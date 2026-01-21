@@ -6,7 +6,7 @@ import plotly.express as px
 import plotly.graph_objects as go
 
 # --- PAGE CONFIGURATION ---
-st.set_page_config(page_title="CAT Prime Solution Designer v45", page_icon="⚡", layout="wide")
+st.set_page_config(page_title="CAT Primary Power Solutions", page_icon="⚡", layout="wide")
 
 # ==============================================================================
 # 0. HYBRID DATA LIBRARY
@@ -142,7 +142,7 @@ else:
     hr_conv_factor = 1.055056 # Convert Btu to kJ
 
 t = {
-    "title": f"⚡ CAT Prime Solution Designer v45 ({freq_hz}Hz)",
+    "title": f"⚡ CAT Primary Power Solutions ({freq_hz}Hz)",
     "subtitle": "**Sovereign Energy Solutions.**\nAdvanced modeling for Off-Grid Microgrids, Tri-Generation, and Gas Infrastructure.",
     "sb_1": "1. Data Center Profile",
     "sb_2": "2. Generation Technology",
@@ -175,7 +175,7 @@ with st.sidebar:
     avail_req = st.number_input("Required Availability (%)", 90.0, 99.99999, 99.99, format="%.5f")
     step_load_req = st.number_input("Block Load / Step Req (%)", 0.0, 100.0, def_step_load, help="% of IT load that hits instantly")
     
-    # Voltage Selection (New in v45)
+    # Voltage Selection
     st.markdown("⚡ **Voltage Level**")
     volt_mode = st.radio("Connection Voltage Mode", ["Auto-Recommend", "Manual Selection"])
     manual_voltage_kv = 0.0
@@ -200,8 +200,8 @@ with st.sidebar:
     def_mw = eng_data['iso_rating_mw']
     def_eff_pct = eng_data['electrical_efficiency'] * 100.0
     
-    # Display default HR in correct unit for reference
-    def_hr_base = eng_data['heat_rate_lhv'] # Always Btu
+    # Display default HR in correct unit
+    def_hr_base = eng_data['heat_rate_lhv'] 
     def_hr_disp = def_hr_base * hr_conv_factor
     
     col_t1, col_t2 = st.columns(2)
@@ -213,7 +213,6 @@ with st.sidebar:
         final_elec_eff = eff_user / 100.0
     else:
         hr_user = col_t2.number_input(f"HR ({u_hr})", 5000.0, 15000.0, def_hr_disp, format="%.0f")
-        # Convert back to Btu for calculation engine
         hr_btu = hr_user / hr_conv_factor
         final_elec_eff = 3412.14 / hr_btu
 
@@ -223,11 +222,10 @@ with st.sidebar:
     gen_unit_cost = col_c1.number_input("Equip ($/kW)", 100.0, 3000.0, eng_data['est_cost_kw'], step=10.0)
     gen_install_cost = col_c2.number_input("Install ($/kW)", 50.0, 3000.0, eng_data['est_install_kw'], step=10.0)
     
-    # Technical Params (Updated Precision for Xd)
+    # Technical Params
     st.markdown("⚙️ **Technical Parameters**")
     col_p1, col_p2 = st.columns(2)
     step_load_cap = col_p1.number_input("Step Load Cap (%)", 0.0, 100.0, eng_data['step_load_pct'])
-    # PRECISION UPDATE: 5 decimals for Impedance
     xd_2_pu = col_p2.number_input('Xd" (pu)', 0.01000, 0.50000, eng_data.get('reactance_xd_2', 0.15), step=0.001, format="%.5f")
 
     # Reliability
@@ -327,7 +325,6 @@ with st.sidebar:
     
     bess_maint_pct = 0.0
     bess_for_pct = 0.0
-    # BESS Costing vars initialization
     bess_cost_kwh = 0.0
     bess_cost_kw = 0.0
     bess_life_batt = 10
@@ -422,7 +419,7 @@ else:
 p_dist_loss_mw = p_net_req * dist_loss_pct
 p_gen_bus_req = p_net_req + p_dist_loss_mw
 
-# Voltage Selection Logic (New in v45)
+# Voltage Selection Logic
 if volt_mode == "Manual Selection":
     op_voltage_kv = manual_voltage_kv
     rec_voltage = f"{manual_voltage_kv:.1f} kV (User)"
@@ -553,15 +550,15 @@ eff_factor = max(eff_factor, 0.50)
 gross_eff_site = base_eff * eff_factor
 gross_hr_lhv = 3412.14 / gross_eff_site
 
-# Fuel Calculation (Fix)
+# Fuel Calculation
 total_fuel_input_mmbtu_hr = p_gross_total * (gross_hr_lhv / 1000) 
 
 net_hr_lhv = (total_fuel_input_mmbtu_hr * 1e6) / p_net_req
 net_hr_hhv = net_hr_lhv * 1.108
 
-# Display Heat Rate logic (v45)
-disp_hr_val = net_hr_lhv * hr_conv_factor
-disp_hr_unit = u_hr # Set in global
+# Display Heat Rate logic (Rounding UP and removing decimals)
+disp_hr_val = math.ceil(net_hr_lhv * hr_conv_factor)
+disp_hr_unit = u_hr 
 
 # --- E. SHORT CIRCUIT ---
 gen_mva_total = installed_cap / 0.8
@@ -723,13 +720,6 @@ else:
     payback_str = "N/A"; roi_simple = 0
 
 # --- K. SENSITIVITY ANALYSIS (SWEET SPOT) ---
-# Goal: Find Gas Price where LCOE == Grid Price
-# LCOE = (Fuel + OM + CAPEX) / Energy
-# GridPrice * Energy = Fuel + OM + CAPEX
-# Fuel = MMBtu_Yr * GasPrice
-# (GridPrice * Energy) - OM - CAPEX = MMBtu_Yr * GasPrice
-# GasPrice = (GridPrice * Energy - OM - CAPEX) / MMBtu_Yr
-
 annual_grid_revenue = mwh_year * 1000 * grid_price
 fixed_costs_annual = om_cost_year + capex_annualized + repowering_annualized
 fuel_mmbtu_annual = total_fuel_input_mmbtu_hr * 8760
@@ -769,7 +759,7 @@ else:
 # --- TOP KPIS ---
 c1, c2, c3, c4 = st.columns(4)
 c1.metric(t["kpi_net"], f"{p_net_req:.1f} MW", f"Gross: {p_gross_total:.1f} MW")
-# Dynamic HR Unit
+# Dynamic HR Unit (Rounded Up)
 c2.metric(f"Net Heat Rate ({disp_hr_unit})", f"{disp_hr_val:,.0f}", f"Eff: {gross_eff_site*100:.1f}%")
 c3.metric("Rec. Voltage", rec_voltage, f"Isc: {isc_ka:.1f} kA")
 c4.metric(t["kpi_pue"], f"{pue_calc:.3f}", f"Cooling: {cooling_mode}")
@@ -929,7 +919,7 @@ with t4:
     st.subheader("📊 Gas Price Sensitivity & Sweet Spot")
     
     if breakeven_gas_price > 0:
-        st.success(f"🎯 **Sweet Spot:** If Gas Price < **${breakeven_gas_price:.2f}/MMBtu**, Prime Power is cheaper than Grid (${grid_price:.3f}/kWh).")
+        st.success(f"🎯 **Gas Price to match Grid Energy Purchase = ${breakeven_gas_price:.2f}/MMBtu**")
     else:
         st.error("⚠️ **No Sweet Spot:** Prime Power is more expensive than Grid even with free gas (Fixed Costs too high).")
         
@@ -944,6 +934,24 @@ with t4:
     )
     st.plotly_chart(fig_sens, use_container_width=True)
 
+    if use_bess:
+        st.caption(f"ℹ️ **Repowering:** Includes NPV of battery replacement every {bess_life_batt} years.")
+
+    # Chart
+    cost_data = pd.DataFrame({
+        "Component": ["Fuel", "O&M (OPEX)", "CAPEX (Amortized)", "Repowering (Future)"],
+        "$/kWh": [
+            fuel_cost_year/(mwh_year*1000), 
+            om_cost_year/(mwh_year*1000), 
+            capex_annualized_dyn/(mwh_year*1000),
+            repowering_annualized/(mwh_year*1000)
+        ]
+    })
+    
+    fig_bar = px.bar(cost_data, x="Component", y="$/kWh", color="Component", 
+                     title="LCOE Breakdown (USD/kWh)", text_auto='.4f')
+    st.plotly_chart(fig_bar, use_container_width=True)
+
 # --- FOOTER ---
 st.markdown("---")
-st.caption("CAT Prime Solution Designer | v2026.45 | Sensitivity & Precision Update")
+st.caption("CAT Primary Power Solutions | v2026.46 | Clean & Precise")
