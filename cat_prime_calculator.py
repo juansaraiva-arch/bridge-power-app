@@ -6,7 +6,7 @@ import plotly.express as px
 import plotly.graph_objects as go
 
 # --- PAGE CONFIGURATION ---
-st.set_page_config(page_title="CAT Primary Power Solutions v50", page_icon="⚡", layout="wide")
+st.set_page_config(page_title="CAT Primary Power Solutions v51", page_icon="⚡", layout="wide")
 
 # ==============================================================================
 # 0. HYBRID DATA LIBRARY
@@ -139,7 +139,7 @@ else:
     u_energy, u_therm, u_water = "MWh", "GJ", "m³/day"
     u_press = "Bar"
     u_hr = "kJ/kWh"
-    hr_conv_factor = 1.055056 # Convert Btu to kJ
+    hr_conv_factor = 1.055056 
 
 t = {
     "title": f"⚡ CAT Primary Power Solutions ({freq_hz}Hz)",
@@ -175,7 +175,6 @@ with st.sidebar:
     avail_req = st.number_input("Required Availability (%)", 90.0, 99.99999, 99.99, format="%.5f")
     step_load_req = st.number_input("Block Load / Step Req (%)", 0.0, 100.0, def_step_load, help="% of IT load that hits instantly")
     
-    # Voltage Selection
     st.markdown("⚡ **Voltage Level**")
     volt_mode = st.radio("Connection Voltage Mode", ["Auto-Recommend", "Manual Selection"])
     manual_voltage_kv = 0.0
@@ -194,14 +193,11 @@ with st.sidebar:
     eng_data = leps_gas_library[selected_model]
     st.caption(f"**{eng_data['description']}**")
     
-    # Efficiency & Rating
     eff_input_method = st.radio("Efficiency Input Mode", ["Efficiency (%)", f"Heat Rate LHV ({u_hr})"])
     
     def_mw = eng_data['iso_rating_mw']
     def_eff_pct = eng_data['electrical_efficiency'] * 100.0
-    
-    # Display default HR in correct unit for reference
-    def_hr_base = eng_data['heat_rate_lhv'] # Always Btu
+    def_hr_base = eng_data['heat_rate_lhv'] 
     def_hr_disp = def_hr_base * hr_conv_factor
     
     col_t1, col_t2 = st.columns(2)
@@ -213,24 +209,19 @@ with st.sidebar:
         final_elec_eff = eff_user / 100.0
     else:
         hr_user = col_t2.number_input(f"HR ({u_hr})", 5000.0, 15000.0, def_hr_disp, format="%.0f")
-        # Convert back to Btu for calculation engine
         hr_btu = hr_user / hr_conv_factor
         final_elec_eff = 3412.14 / hr_btu
 
-    # ASSET VALUATION
     st.markdown("💰 **Asset Valuation & Costs**")
     col_c1, col_c2 = st.columns(2)
     gen_unit_cost = col_c1.number_input("Equip ($/kW)", 100.0, 3000.0, eng_data['est_cost_kw'], step=10.0)
     gen_install_cost = col_c2.number_input("Install ($/kW)", 50.0, 3000.0, eng_data['est_install_kw'], step=10.0)
     
-    # Technical Params (Updated Precision for Xd)
     st.markdown("⚙️ **Technical Parameters**")
     col_p1, col_p2 = st.columns(2)
     step_load_cap = col_p1.number_input("Step Load Cap (%)", 0.0, 100.0, eng_data['step_load_pct'])
-    # PRECISION UPDATE: 5 decimals for Impedance
     xd_2_pu = col_p2.number_input('Xd" (pu)', 0.01000, 0.50000, eng_data.get('reactance_xd_2', 0.15), step=0.001, format="%.5f")
 
-    # Reliability
     st.caption("Gen Set Availability (N+M+S)")
     c_r1, c_r2 = st.columns(2)
     maint_outage_pct = c_r1.number_input("Maint. Unavail (%)", 0.0, 20.0, float(eng_data.get('default_maint', 5.0))) / 100.0
@@ -248,8 +239,8 @@ with st.sidebar:
     methane_number = 80
     
     if derate_mode == "Auto-Calculate":
-        site_temp_c = 35 # default
-        site_alt_m = 100 # default
+        site_temp_c = 35 
+        site_alt_m = 100 
         if is_imperial:
             site_temp_f = st.slider(f"Max Ambient Temp ({u_temp})", 32, 122, 95)
             site_alt_ft = st.number_input(f"Altitude ({u_dist})", 0, 13000, 328)
@@ -269,21 +260,18 @@ with st.sidebar:
         manual_derate_pct = st.number_input("Manual Derate (%)", 0.0, 50.0, 5.0)
         derate_factor_calc = 1.0 - (manual_derate_pct / 100.0)
 
-    # GAS PIPELINE INPUTS (UPDATED v50)
+    # GAS PIPELINE INPUTS
     st.markdown("⛽ **Gas Infrastructure**")
-    # New Selector: Removes CNG, Adds Backup Logic
     gas_source = st.radio("Supply Method", ["Pipeline Network", "Pipeline + LNG Backup", "100% LNG Virtual Pipeline"])
     
-    # Logic Interpretation
     use_pipeline = "Pipeline" in gas_source
     has_lng_storage = "LNG" in gas_source
     is_lng_primary = "100%" in gas_source
-    
     virtual_pipe_mode = "LNG" if has_lng_storage else "Pipeline"
 
     # LOGISTICS INPUTS
     storage_days = 0
-    tank_unit_cap = 10000.0 # Default LNG ISO
+    tank_unit_cap = 10000.0 
     tank_mob_cost = 5000.0
     tank_area_unit = 40.0
     
@@ -291,7 +279,6 @@ with st.sidebar:
         mode_label = "Primary" if is_lng_primary else "Backup"
         st.markdown(f"🔹 **LNG Configuration ({mode_label})**")
         storage_days = st.number_input("Storage Autonomy (Days)", 1, 60, 5)
-        
         c_s1, c_s2 = st.columns(2)
         tank_unit_cap = c_s1.number_input("Tank Cap (Gal)", 1000.0, 100000.0, 10000.0)
         tank_mob_cost = c_s2.number_input("Mob Cost/Tank ($)", 0.0, 50000.0, 5000.0)
@@ -306,7 +293,20 @@ with st.sidebar:
         supply_pressure_disp = st.number_input(f"Supply Pressure ({u_press})", 0.5, 100.0, 4.1, step=0.5) 
         supply_pressure_psi = supply_pressure_disp * 14.5038
 
+    # --- NEW: AREA OPTIMIZER INPUTS (v51) ---
+    st.divider()
+    st.markdown("📏 **Footprint Constraints**")
+    enable_optimizer = st.checkbox("Enable Area Optimization", value=False)
+    max_area_input = 0.0
+    area_unit_sel = "m²"
+    
+    if enable_optimizer:
+        c_a1, c_a2 = st.columns(2)
+        area_unit_sel = c_a1.selectbox("Area Unit", ["m²", "Acres", "Hectares"])
+        max_area_input = c_a2.number_input(f"Max Area ({area_unit_sel})", 0.0, 1000000.0, 0.0, step=100.0)
+
     # ELECTRICAL
+    st.divider()
     st.markdown("🔌 **Grid Connection**")
     grid_connected = st.checkbox("Grid Connected (Parallel)", value=True)
     if grid_connected:
@@ -329,7 +329,6 @@ with st.sidebar:
     
     bess_maint_pct = 0.0
     bess_for_pct = 0.0
-    # BESS Costing vars initialization
     bess_cost_kwh = 0.0
     bess_cost_kw = 0.0
     bess_life_batt = 10
@@ -389,7 +388,6 @@ with st.sidebar:
     st.header(t["sb_7"])
     gas_price = st.number_input("Gas Price (USD/MMBtu)", 1.0, 20.0, 6.5)
     
-    # LNG Premium Logic (New v50)
     if is_lng_primary:
         vp_premium = st.number_input("Virtual Pipe Premium ($/MMBtu)", 0.0, 15.0, 4.0)
         gas_price += vp_premium
@@ -430,7 +428,6 @@ if volt_mode == "Manual Selection":
     op_voltage_kv = manual_voltage_kv
     rec_voltage = f"{manual_voltage_kv:.1f} kV (User)"
 else:
-    # Auto-Recommend based on ANSI/IEEE Amperage Constraints
     if is_50hz:
         rec_voltage = "11 kV" if p_gen_bus_req < 20 else ("33 kV" if p_gen_bus_req > 50 else "11 kV / 33 kV")
         op_voltage_kv = 11.0 if p_gen_bus_req < 35 else 33.0
@@ -448,23 +445,15 @@ n_transient = 0
 n_headroom = 0
 
 if use_bess:
-    # BESS Optimized
     target_load_factor = 0.95 
     n_base_mw = p_gen_bus_req / (1 - gen_parasitic_pct) 
     n_running = math.ceil(n_base_mw / (unit_site_cap * target_load_factor))
-    
     bess_power_req = max(step_mw_req, unit_site_cap) 
-    
     driver_txt = "Steady State (BESS Optimized)"
 else:
-    # NO BESS - HARD CONSTRAINTS
     n_steady = math.ceil(p_gen_bus_req / (unit_site_cap * 0.90))
-    
-    # Transient Stiffness
     unit_step_mw_cap = unit_site_cap * (step_load_cap / 100.0)
     n_transient = math.ceil(step_mw_req / unit_step_mw_cap)
-    
-    # Headroom
     n_headroom = n_steady
     while True:
         total_cap = n_headroom * unit_site_cap
@@ -473,13 +462,10 @@ else:
         if (total_cap - gross_needed) >= step_mw_req:
             break
         n_headroom += 1
-        
     n_running = max(n_steady, n_transient, n_headroom)
-    
     if n_running == n_transient: driver_txt = f"Transient Stiffness (Step: {step_load_cap}%)"
     elif n_running == n_headroom: driver_txt = "Spinning Reserve (Headroom)"
     else: driver_txt = "Steady State Load"
-    
     bess_power_req = 0
 
 # --- C. RELIABILITY (PROBABILISTIC - GEN + BESS HYBRID LOOP) ---
@@ -493,7 +479,6 @@ n_reserve_gen = 0
 n_redundant_bess = 0 
 
 while True:
-    # 1. Calc Generator Reliability
     n_pool_gen = n_running + n_reserve_gen
     prob_gen_sys = 0.0
     for k in range(n_running, n_pool_gen + 1):
@@ -501,24 +486,19 @@ while True:
         prob = comb * (prob_gen_unit ** k) * ((1 - prob_gen_unit) ** (n_pool_gen - k))
         prob_gen_sys += prob
         
-    # 2. Calc BESS Reliability
     if use_bess:
         p_fail_bess_unit = 1.0 - prob_bess_unit
         prob_bess_sys = 1.0 - (p_fail_bess_unit ** (1 + n_redundant_bess))
     else:
         prob_bess_sys = 1.0
         
-    # 3. Combined System Reliability
     system_reliability = prob_gen_sys * prob_bess_sys
+    if system_reliability >= target_reliability: break
     
-    if system_reliability >= target_reliability:
-        break
-        
     if use_bess and (prob_bess_sys < prob_gen_sys):
         n_redundant_bess += 1
     else:
         n_reserve_gen += 1
-        
     if n_reserve_gen > 25 or n_redundant_bess > 10: break
 
 n_reserve = n_reserve_gen # ALIAS FIX
@@ -526,16 +506,15 @@ n_total = n_running + n_maint + n_reserve
 installed_cap = n_total * unit_site_cap
 system_reliability_pct = system_reliability * 100.0
 
-reliability_bottleneck = "Generators" # Default init
+reliability_bottleneck = "Generators" 
 if use_bess and (prob_bess_sys < prob_gen_sys):
     reliability_bottleneck = "BESS Availability"
 
-# BESS Final Sizing
 bess_multiplier = 1 + n_redundant_bess
 bess_power_total = bess_power_req * bess_multiplier
 bess_energy_total = bess_power_total * 2 
 
-# --- D. THERMODYNAMICS (AGGRESSIVE CURVE) ---
+# --- D. THERMODYNAMICS ---
 total_parasitics_mw = n_running * (unit_size_iso * gen_parasitic_pct)
 p_gross_total = p_gen_bus_req + total_parasitics_mw
 real_load_factor = p_gross_total / (n_running * unit_site_cap)
@@ -556,15 +535,20 @@ eff_factor = max(eff_factor, 0.50)
 gross_eff_site = base_eff * eff_factor
 gross_hr_lhv = 3412.14 / gross_eff_site
 
-# Fuel Calculation (Fix)
 total_fuel_input_mmbtu_hr = p_gross_total * (gross_hr_lhv / 1000) 
-
 net_hr_lhv = (total_fuel_input_mmbtu_hr * 1e6) / (p_net_req * 1000)
 net_hr_hhv = net_hr_lhv * 1.108
 
-# Display Heat Rate logic (Double Units: MJ and Btu)
-hr_mj = net_hr_lhv * 0.001055056 # Convert Btu/kWh to MJ/kWh
-hr_btu = net_hr_lhv # Keep in Btu/kWh
+if is_imperial:
+    hr_primary = math.ceil(net_hr_lhv)
+    unit_primary = "Btu/kWh"
+    hr_secondary = net_hr_lhv * 0.001055056 
+    unit_secondary = "MJ/kWh"
+else:
+    hr_primary = net_hr_lhv * 0.001055056
+    unit_primary = "MJ/kWh"
+    hr_secondary = math.ceil(net_hr_lhv)
+    unit_secondary = "Btu/kWh"
 
 # --- E. SHORT CIRCUIT ---
 gen_mva_total = installed_cap / 0.8
@@ -593,7 +577,7 @@ else:
 
 water_cons_daily_m3 = water_cons_m3_hr * 24
 
-# --- G. LOGISTICS (UPDATED v50) ---
+# --- G. LOGISTICS ---
 total_mmbtu_day = total_fuel_input_mmbtu_hr * 24
 peak_scfh = total_fuel_input_mmbtu_hr * 1000 
 req_pressure_min = eng_data.get('gas_pressure_min_psi', 0.5)
@@ -607,9 +591,7 @@ rec_pipe_dia = max(4, math.ceil(math.sqrt(target_area_ft2 * 4 / math.pi) * 12))
 num_tanks = 0; log_capex = 0; log_text = "Pipeline"; storage_area_m2 = 0 
 
 if has_lng_storage:
-    vol_day = total_mmbtu_day * 12.5 # Gal LNG per MMBtu
-    # If backup, we calculate tanks based on autonomy days
-    # If primary, same logic.
+    vol_day = total_mmbtu_day * 12.5 
     num_tanks = math.ceil((vol_day * storage_days)/tank_unit_cap)
     log_capex = num_tanks * tank_mob_cost
     log_text = f"LNG Storage: {vol_day:,.0f} gpd"
@@ -637,6 +619,24 @@ area_bess = bess_power_total * 30
 area_sub = 2500
 total_area_m2 = (area_gen + storage_area_m2 + area_chp + area_bess + area_sub) * 1.2
 
+# --- NEW: AREA OPTIMIZER LOGIC (v51) ---
+max_area_limit_m2 = 0
+if enable_optimizer and max_area_input > 0:
+    if area_unit_sel == "Acres": max_area_limit_m2 = max_area_input / 0.000247105
+    elif area_unit_sel == "Hectares": max_area_limit_m2 = max_area_input * 10000
+    else: max_area_limit_m2 = max_area_input
+
+    area_utilization_pct = min(100.0, (total_area_m2 / max_area_limit_m2) * 100)
+    is_area_exceeded = total_area_m2 > max_area_limit_m2
+    
+    # Calculate Savings Scenarios
+    # Scenario A: No LNG
+    savings_lng = storage_area_m2 * 1.2 # Including safety margin
+    # Scenario B: No CHP
+    savings_chp = (area_chp - (p_net_req * 10)) * 1.2 
+    # Scenario C: Turbines (Approx 40% of RICE Gen Area)
+    savings_turb = (area_gen * 0.60) * 1.2 
+
 # --- J. FINANCIALS & NPV ---
 base_gen_cost_kw = gen_unit_cost 
 gen_cost_total = (installed_cap * 1000) * base_gen_cost_kw / 1e6 
@@ -655,7 +655,6 @@ if use_bess:
 
 pipe_cost_m = 50 * rec_pipe_dia 
 pipeline_capex_m = (pipe_cost_m * dist_gas_main_m) / 1e6 
-# Pipeline cost applies unless it is 100% Virtual
 if is_lng_primary: pipeline_capex_m = 0
 
 cost_items = [
@@ -689,14 +688,12 @@ mwh_year = p_net_req * 8760
 fuel_cost_year = total_fuel_input_mmbtu_hr * gas_price * 8760
 om_cost_year = (mwh_year * om_var_price) + bess_om_annual 
 
-# Initial Total CAPEX
 initial_capex_sum = df_capex_base["Cost (M USD)"].sum()
 capex_annualized = (initial_capex_sum * 1e6) * crf
 
 total_annual_cost = fuel_cost_year + om_cost_year + capex_annualized + repowering_annualized
 lcoe = total_annual_cost / (mwh_year * 1000)
 
-# NPV Logic
 annual_grid_cost = mwh_year * 1000 * grid_price
 annual_prime_opex = fuel_cost_year + om_cost_year
 annual_savings = annual_grid_cost - annual_prime_opex
@@ -708,7 +705,6 @@ else:
 
 npv = pv_savings - (initial_capex_sum * 1e6) - (repowering_pv_m * 1e6)
 
-# Payback
 if annual_savings > 0:
     payback_years = (initial_capex_sum * 1e6) / annual_savings
     roi_simple = (annual_savings / (initial_capex_sum * 1e6)) * 100
@@ -716,7 +712,6 @@ if annual_savings > 0:
 else:
     payback_str = "N/A"; roi_simple = 0
 
-# --- K. SENSITIVITY ANALYSIS (SWEET SPOT) ---
 annual_grid_revenue = mwh_year * 1000 * grid_price
 fixed_costs_annual = om_cost_year + capex_annualized + repowering_annualized
 fuel_mmbtu_annual = total_fuel_input_mmbtu_hr * 8760
@@ -726,8 +721,7 @@ if fuel_mmbtu_annual > 0:
 else:
     breakeven_gas_price = 0
 
-# Generate Plot Data
-gas_prices_x = np.linspace(1, 20, 50) # $1 to $20 range
+gas_prices_x = np.linspace(1, 20, 50) 
 lcoe_y = []
 for g in gas_prices_x:
     fc = fuel_mmbtu_annual * g
@@ -757,7 +751,11 @@ else:
 c1, c2, c3, c4 = st.columns(4)
 c1.metric(t["kpi_net"], f"{p_net_req:.1f} MW", f"Gross: {p_gross_total:.1f} MW")
 # Dynamic HR Unit (Rounded Up)
-c2.metric("Net Heat Rate", f"{hr_mj:.2f} MJ/kWh", f"{hr_btu:,.0f} Btu/kWh")
+if is_imperial:
+    c2.metric(f"Net Heat Rate ({unit_primary})", f"{hr_primary:,.0f}", f"{hr_secondary:.2f} {unit_secondary}")
+else:
+    c2.metric(f"Net Heat Rate ({unit_primary})", f"{hr_primary:.2f}", f"{hr_secondary:,.0f} {unit_secondary}")
+
 c3.metric("Rec. Voltage", rec_voltage, f"Isc: {isc_ka:.1f} kA")
 c4.metric(t["kpi_pue"], f"{pue_calc:.3f}", f"Cooling: {cooling_mode}")
 
@@ -792,7 +790,6 @@ with t1:
         st.write(f"**S (Standby):** {n_reserve}")
         st.caption(f"Reserve: Probabilistic > {avail_req}% reliability.")
         
-        # Reliability Coloring
         if system_reliability_pct >= avail_req:
             st.metric("Total Installed Fleet", f"{n_total} Units", f"Reliability: {system_reliability_pct:.4f}% (OK)")
         else:
@@ -811,7 +808,6 @@ with t2:
     col1, col2 = st.columns(2)
     with col1:
         st.subheader("Logistics: " + virtual_pipe_mode)
-        # Modified Logic for v50 (LNG Backup vs Primary)
         if has_lng_storage:
             st.metric("LNG Daily Volume", log_text)
             st.metric("Assets Req.", f"{num_tanks} Tanks")
@@ -836,8 +832,38 @@ with t2:
             ]
         })
         st.dataframe(df_foot.style.format({f"Area ({u_area_s})": "{:,.0f}"}), use_container_width=True)
-        # Added Total Footprint Display
         st.metric("Total Land Requirement", f"{footprint_large_val:.2f} {footprint_unit}")
+        
+        # --- OPTIMIZER VISUALIZATION ---
+        if enable_optimizer and max_area_input > 0:
+            st.markdown("---")
+            st.subheader("📐 Area Optimization")
+            st.progress(min(100, int(area_utilization_pct)))
+            
+            if is_area_exceeded:
+                st.error(f"🛑 **Over Limit:** {area_utilization_pct:.1f}% of available space used.")
+                st.markdown("#### 💡 Recommendation Engine")
+                
+                c_opt1, c_opt2, c_opt3 = st.columns(3)
+                
+                # Scenario A
+                if has_lng_storage and savings_lng > 0:
+                    c_opt1.warning("Option A: Remove LNG Backup")
+                    c_opt1.write(f"Save ~{savings_lng*(10.764 if is_imperial else 1):,.0f} {u_area_s}")
+                    c_opt1.caption("Risk: No onsite fuel autonomy.")
+                
+                # Scenario B
+                if include_chp and savings_chp > 0:
+                    c_opt2.warning("Option B: Remove Tri-Gen")
+                    c_opt2.write(f"Save ~{savings_chp*(10.764 if is_imperial else 1):,.0f} {u_area_s}")
+                    c_opt2.caption("Risk: Lower efficiency (Higher PUE).")
+                    
+                # Scenario C
+                c_opt3.warning("Option C: Switch to Turbines")
+                c_opt3.write(f"Save ~{savings_turb*(10.764 if is_imperial else 1):,.0f} {u_area_s}")
+                c_opt3.caption("Risk: Higher OPEX (Fuel).")
+            else:
+                st.success(f"✅ **Fit OK:** {area_utilization_pct:.1f}% utilized.")
 
     with col2:
         st.subheader("Emissions & Urea")
@@ -964,4 +990,4 @@ with t4:
 
 # --- FOOTER ---
 st.markdown("---")
-st.caption("CAT Primary Power Solutions | v2026.50 | LNG Backup Logic")
+st.caption("CAT Primary Power Solutions | v2026.51 | Area Optimizer")
