@@ -6,7 +6,7 @@ import plotly.express as px
 import plotly.graph_objects as go
 
 # --- PAGE CONFIGURATION ---
-st.set_page_config(page_title="CAT Prime Solution Designer v17", page_icon="⚡", layout="wide")
+st.set_page_config(page_title="CAT Prime Solution Designer v18", page_icon="⚡", layout="wide")
 
 # ==============================================================================
 # 0. DATA LIBRARY (LEPS GAS & TURBINES)
@@ -19,7 +19,7 @@ leps_gas_library = {
         "iso_rating_mw": 1.9,
         "electrical_efficiency": 0.392,
         "heat_rate_lhv": 8780,
-        "step_load_pct": 25.0, # Realistic Stiffness
+        "step_load_pct": 25.0, 
         "emissions_nox": 0.5,
         "emissions_co": 2.5,
         "default_for": 2.0, 
@@ -35,7 +35,7 @@ leps_gas_library = {
         "iso_rating_mw": 2.5,
         "electrical_efficiency": 0.386,
         "heat_rate_lhv": 8836,
-        "step_load_pct": 40.0, # Better step response
+        "step_load_pct": 40.0, 
         "emissions_nox": 0.5,
         "emissions_co": 2.1,
         "default_for": 2.0,
@@ -51,7 +51,7 @@ leps_gas_library = {
         "iso_rating_mw": 2.4,
         "electrical_efficiency": 0.453,
         "heat_rate_lhv": 7638,
-        "step_load_pct": 15.0, # Poor step response (High Eff trade-off)
+        "step_load_pct": 15.0, 
         "emissions_nox": 0.3,
         "emissions_co": 2.3,
         "default_for": 2.5,
@@ -67,7 +67,7 @@ leps_gas_library = {
         "iso_rating_mw": 3.96,
         "electrical_efficiency": 0.434,
         "heat_rate_lhv": 7860,
-        "step_load_pct": 10.0, # Base load machine
+        "step_load_pct": 10.0, 
         "emissions_nox": 0.5,
         "emissions_co": 1.8,
         "default_for": 3.0,
@@ -137,7 +137,7 @@ else:
     u_press = "Bar"
 
 t = {
-    "title": f"⚡ CAT Prime Solution Designer v17 ({freq_hz}Hz)",
+    "title": f"⚡ CAT Prime Solution Designer v18 ({freq_hz}Hz)",
     "subtitle": "**Sovereign Energy Solutions.**\nAdvanced modeling for Off-Grid Microgrids, Tri-Generation, and Gas Infrastructure.",
     "sb_1": "1. Data Center Profile",
     "sb_2": "2. Generation Technology",
@@ -174,45 +174,50 @@ with st.sidebar:
 
     st.divider()
 
-    # --- 2. GENERATION TECH ---
+    # --- 2. GENERATION TECHNOLOGY (CONSOLIDATED) ---
     st.header(t["sb_2"])
     
     selected_model = st.selectbox("Select CAT/Solar Model", list(leps_gas_library.keys()))
     eng_data = leps_gas_library[selected_model]
     st.caption(f"**{eng_data['description']}**")
     
+    # Efficiency & Rating
     eff_input_method = st.radio("Efficiency Input Mode", ["Efficiency (%)", "Heat Rate LHV (Btu/kWh)"])
     
     def_mw = eng_data['iso_rating_mw']
     def_eff_pct = eng_data['electrical_efficiency'] * 100.0
     def_hr_lhv = eng_data['heat_rate_lhv']
     
-    unit_size_iso = st.number_input("Unit Prime Rating (ISO MW)", 0.1, 100.0, def_mw, format="%.2f")
+    col_t1, col_t2 = st.columns(2)
+    unit_size_iso = col_t1.number_input("Rating (ISO MW)", 0.1, 100.0, def_mw, format="%.2f")
     
     final_elec_eff = 0.0
     if eff_input_method == "Efficiency (%)":
-        eff_user = st.number_input("Electrical Efficiency (ISO %)", 20.0, 65.0, def_eff_pct, format="%.1f")
+        eff_user = col_t2.number_input("Eff (ISO %)", 20.0, 65.0, def_eff_pct, format="%.1f")
         final_elec_eff = eff_user / 100.0
     else:
-        hr_user = st.number_input("Heat Rate LHV (Btu/kWh)", 5000.0, 15000.0, def_hr_lhv, format="%.0f")
+        hr_user = col_t2.number_input("HR (Btu/kWh)", 5000.0, 15000.0, def_hr_lhv, format="%.0f")
         final_elec_eff = 3412.14 / hr_user
 
-    # COST SECTION
-    st.markdown("💰 **Asset Valuation (USD)**")
-    gen_unit_cost = st.number_input("Equipment Cost (USD/kW)", 100.0, 3000.0, eng_data['est_cost_kw'], step=10.0)
-    gen_install_cost = st.number_input("Installation Cost (USD/kW)", 50.0, 3000.0, eng_data['est_install_kw'], step=10.0)
+    # ASSET VALUATION (GROUPED HERE AS REQUESTED)
+    st.markdown("💰 **Asset Valuation & Costs**")
+    col_c1, col_c2 = st.columns(2)
+    gen_unit_cost = col_c1.number_input("Equip ($/kW)", 100.0, 3000.0, eng_data['est_cost_kw'], step=10.0)
+    gen_install_cost = col_c2.number_input("Install ($/kW)", 50.0, 3000.0, eng_data['est_install_kw'], step=10.0)
     
-    step_load_cap = st.number_input("Unit Step Load Capability (%)", 0.0, 100.0, eng_data['step_load_pct'])
-    xd_2_pu = st.number_input('Subtransient Reactance (Xd" pu)', 0.05, 0.30, eng_data.get('reactance_xd_2', 0.15), step=0.01)
+    # Technical Params
+    st.markdown("⚙️ **Technical Parameters**")
+    col_p1, col_p2 = st.columns(2)
+    step_load_cap = col_p1.number_input("Step Load Cap (%)", 0.0, 100.0, eng_data['step_load_pct'])
+    xd_2_pu = col_p2.number_input('Xd" (pu)', 0.05, 0.30, eng_data.get('reactance_xd_2', 0.15), step=0.01)
 
-    st.caption("Availability Parameters (N+M+S)")
+    # Reliability
+    st.caption("Reliability (N+M+S) & Parasitics")
     c_r1, c_r2 = st.columns(2)
     maint_outage_pct = c_r1.number_input("Maint. Unavail (%)", 0.0, 20.0, float(eng_data.get('default_maint', 5.0))) / 100.0
     forced_outage_pct = c_r2.number_input("Forced Outage Rate (%)", 0.0, 20.0, float(eng_data.get('default_for', 2.0))) / 100.0
     
-    st.markdown("⚠️ **Parasitics**")
-    st.info("Defined as Fixed % of Unit Nameplate (Physics-based)")
-    gen_parasitic_pct = st.number_input("Gen. Auxiliaries (%)", 0.0, 10.0, 2.5) / 100.0
+    gen_parasitic_pct = st.number_input("Gen. Parasitic Load (%)", 0.0, 10.0, 2.5, help="Fixed % of Nameplate") / 100.0
 
     st.divider()
 
@@ -251,7 +256,7 @@ with st.sidebar:
     if "LNG" in gas_source: virtual_pipe_mode = "LNG"
     elif "CNG" in gas_source: virtual_pipe_mode = "CNG"
 
-    # LOGISTICS INPUTS (New from Bridge v38)
+    # LOGISTICS INPUTS
     storage_days = 0
     tank_unit_cap = 1.0
     tank_mob_cost = 0.0
@@ -795,4 +800,4 @@ with t4:
 
 # --- FOOTER ---
 st.markdown("---")
-st.caption("CAT Prime Solution Designer | v2026.17 | Enhanced Physics Engine")
+st.caption("CAT Prime Solution Designer | v2026.18 | Unified Physics Engine")
