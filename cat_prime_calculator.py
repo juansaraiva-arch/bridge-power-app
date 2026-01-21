@@ -502,7 +502,7 @@ bess_multiplier = 1 + n_redundant_bess
 bess_power_total = bess_power_req * bess_multiplier
 bess_energy_total = bess_power_total * 2 
 
-# --- D. THERMODYNAMICS ---
+# --- D. THERMODYNAMICS (AGGRESSIVE CURVE) ---
 total_parasitics_mw = n_running * (unit_size_iso * gen_parasitic_pct)
 p_gross_total = p_gen_bus_req + total_parasitics_mw
 real_load_factor = p_gross_total / (n_running * unit_site_cap)
@@ -892,6 +892,3 @@ with t4:
 # --- FOOTER ---
 st.markdown("---")
 st.caption("CAT Prime Solution Designer | v2026.42 | Advanced BESS Financials (Repowering & O&M)")
-
-
-[Image of battery energy storage system]
