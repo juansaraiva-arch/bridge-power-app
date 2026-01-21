@@ -122,13 +122,46 @@ with st.sidebar:
     unit_system = c_glob1.radio("Units", ["Metric (SI)", "Imperial (US)"])
     freq_hz = c_glob2.radio("System Frequency", [60, 50])
 
-    is_imperial = "Imperial" in unit_system
-    is_50hz = freq_hz == 50
+is_imperial = "Imperial" in unit_system
+is_50hz = freq_hz == 50
 
-    # 1. Profile
-    st.header("1. Data Center Profile")
-    dc_type_sel = st.selectbox("Data Center Type", ["AI Factory (Training)", "Hyperscale Standard"])
-    is_ai = "AI" in dc_type_sel
+if is_imperial:
+    u_temp, u_dist, u_area_s, u_area_l = "°F", "ft", "ft²", "Acres"
+    u_vol, u_mass, u_power = "gal", "Short Tons", "MW"
+    u_energy, u_therm, u_water = "MWh", "MMBtu", "gal/day"
+    u_press = "psig"
+else:
+    u_temp, u_dist, u_area_s, u_area_l = "°C", "m", "m²", "Ha"
+    u_vol, u_mass, u_power = "m³", "Tonnes", "MW"
+    u_energy, u_therm, u_water = "MWh", "GJ", "m³/day"
+    u_press = "Bar"
+
+t = {
+    "title": f"⚡ CAT Prime Solution Designer v39 ({freq_hz}Hz)",
+    "subtitle": "**Sovereign Energy Solutions.**\nAdvanced modeling for Off-Grid Microgrids, Tri-Generation, and Gas Infrastructure.",
+    "sb_1": "1. Data Center Profile",
+    "sb_2": "2. Generation Technology",
+    "sb_3": "3. Site, Gas & Noise",
+    "sb_4": "4. Strategy (BESS & LNG)",
+    "sb_5": "5. Cooling & Tri-Gen",
+    "sb_6": "6. Regulatory & Emissions",
+    "sb_7": "7. Economics & ROI",
+    "kpi_net": "Net Capacity",
+    "kpi_pue": "Projected PUE"
+}
+
+st.title(t["title"])
+st.markdown(t["subtitle"])
+
+# ==============================================================================
+# 2. INPUTS (SIDEBAR)
+# ==============================================================================
+
+with st.sidebar:
+    # --- 1. DATA CENTER PROFILE ---
+    st.header(t["sb_1"])
+    dc_type = st.selectbox("Data Center Type", ["AI Factory (Training)", "Hyperscale Standard"])
+    is_ai = "AI" in dc_type
     
     def_step_load = 40.0 if is_ai else 15.0
     def_use_bess = True if is_ai else False
@@ -141,17 +174,16 @@ with st.sidebar:
 
     st.divider()
 
-    # 2. Tech
-    st.header("2. Technology & Fuel")
-    fuel_type_sel = st.selectbox("Fuel Source", ["Natural Gas", "Diesel", "Propane"])
+    # --- 2. GENERATION TECHNOLOGY (CONSOLIDATED) ---
+    st.header(t["sb_2"])
     
-    avail_models = [k for k, v in leps_gas_library.items()] # Assuming all models for now to avoid errors
-    selected_model = st.selectbox("Select Model", list(leps_gas_library.keys()))
+    selected_model = st.selectbox("Select CAT/Solar Model", list(leps_gas_library.keys()))
     eng_data = leps_gas_library[selected_model]
-    st.info(f"**{eng_data['description']}**")
+    st.caption(f"**{eng_data['description']}**")
     
     # Efficiency & Rating
     eff_input_method = st.radio("Efficiency Input Mode", ["Efficiency (%)", "Heat Rate LHV (Btu/kWh)"])
+    
     def_mw = eng_data['iso_rating_mw']
     def_eff_pct = eng_data['electrical_efficiency'] * 100.0
     def_hr_lhv = eng_data['heat_rate_lhv']
@@ -432,8 +464,6 @@ reliability_bottleneck = "Generators"
 # Incorporate BESS Availability in Series
 if use_bess:
     bess_avail = 1.0 - (bess_maint_pct + bess_for_pct)
-    # Hybrid Reliability = Gen_Reliability * BESS_Reliability
-    # Because BESS is required for the "Optimized Strategy" to work (handle transients)
     hybrid_reliability = prob_success * bess_avail
     system_reliability_pct = hybrid_reliability * 100.0
     
@@ -789,6 +819,3 @@ with t4:
 # --- FOOTER ---
 st.markdown("---")
 st.caption("CAT Prime Solution Designer | v2026.39 | Probabilistic Reliability Engine")
-
-
-[Image of battery energy storage system]
