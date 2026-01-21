@@ -6,7 +6,7 @@ import plotly.express as px
 import plotly.graph_objects as go
 
 # --- PAGE CONFIGURATION ---
-st.set_page_config(page_title="CAT Primary Power Solutions v49", page_icon="⚡", layout="wide")
+st.set_page_config(page_title="CAT Primary Power Solutions v50", page_icon="⚡", layout="wide")
 
 # ==============================================================================
 # 0. HYBRID DATA LIBRARY
@@ -200,8 +200,8 @@ with st.sidebar:
     def_mw = eng_data['iso_rating_mw']
     def_eff_pct = eng_data['electrical_efficiency'] * 100.0
     
-    # Display default HR in correct unit
-    def_hr_base = eng_data['heat_rate_lhv'] 
+    # Display default HR in correct unit for reference
+    def_hr_base = eng_data['heat_rate_lhv'] # Always Btu
     def_hr_disp = def_hr_base * hr_conv_factor
     
     col_t1, col_t2 = st.columns(2)
@@ -213,6 +213,7 @@ with st.sidebar:
         final_elec_eff = eff_user / 100.0
     else:
         hr_user = col_t2.number_input(f"HR ({u_hr})", 5000.0, 15000.0, def_hr_disp, format="%.0f")
+        # Convert back to Btu for calculation engine
         hr_btu = hr_user / hr_conv_factor
         final_elec_eff = 3412.14 / hr_btu
 
@@ -222,10 +223,11 @@ with st.sidebar:
     gen_unit_cost = col_c1.number_input("Equip ($/kW)", 100.0, 3000.0, eng_data['est_cost_kw'], step=10.0)
     gen_install_cost = col_c2.number_input("Install ($/kW)", 50.0, 3000.0, eng_data['est_install_kw'], step=10.0)
     
-    # Technical Params
+    # Technical Params (Updated Precision for Xd)
     st.markdown("⚙️ **Technical Parameters**")
     col_p1, col_p2 = st.columns(2)
     step_load_cap = col_p1.number_input("Step Load Cap (%)", 0.0, 100.0, eng_data['step_load_pct'])
+    # PRECISION UPDATE: 5 decimals for Impedance
     xd_2_pu = col_p2.number_input('Xd" (pu)', 0.01000, 0.50000, eng_data.get('reactance_xd_2', 0.15), step=0.001, format="%.5f")
 
     # Reliability
@@ -267,30 +269,32 @@ with st.sidebar:
         manual_derate_pct = st.number_input("Manual Derate (%)", 0.0, 50.0, 5.0)
         derate_factor_calc = 1.0 - (manual_derate_pct / 100.0)
 
-    # GAS PIPELINE INPUTS
+    # GAS PIPELINE INPUTS (UPDATED v50)
     st.markdown("⛽ **Gas Infrastructure**")
-    gas_source = st.radio("Supply Method", ["Pipeline", "Virtual Pipeline (LNG)", "Virtual Pipeline (CNG)"])
+    # New Selector: Removes CNG, Adds Backup Logic
+    gas_source = st.radio("Supply Method", ["Pipeline Network", "Pipeline + LNG Backup", "100% LNG Virtual Pipeline"])
     
-    virtual_pipe_mode = "Pipeline"
-    if "LNG" in gas_source: virtual_pipe_mode = "LNG"
-    elif "CNG" in gas_source: virtual_pipe_mode = "CNG"
+    # Logic Interpretation
+    use_pipeline = "Pipeline" in gas_source
+    has_lng_storage = "LNG" in gas_source
+    is_lng_primary = "100%" in gas_source
+    
+    virtual_pipe_mode = "LNG" if has_lng_storage else "Pipeline"
 
     # LOGISTICS INPUTS
     storage_days = 0
-    tank_unit_cap = 1.0
-    tank_mob_cost = 0.0
-    tank_area_unit = 0.0
+    tank_unit_cap = 10000.0 # Default LNG ISO
+    tank_mob_cost = 5000.0
+    tank_area_unit = 40.0
     
-    if virtual_pipe_mode != "Pipeline":
-        st.markdown(f"🔹 **{virtual_pipe_mode} Configuration**")
+    if has_lng_storage:
+        mode_label = "Primary" if is_lng_primary else "Backup"
+        st.markdown(f"🔹 **LNG Configuration ({mode_label})**")
         storage_days = st.number_input("Storage Autonomy (Days)", 1, 60, 5)
         
-        def_cap = 10000.0 if virtual_pipe_mode == "LNG" else 350000.0
-        def_mob = 5000.0 if virtual_pipe_mode == "LNG" else 2500.0
-        
         c_s1, c_s2 = st.columns(2)
-        tank_unit_cap = c_s1.number_input(f"Tank Cap ({'scf' if virtual_pipe_mode=='CNG' else 'Gal'})", 1000.0, 1000000.0, def_cap)
-        tank_mob_cost = c_s2.number_input("Mob Cost/Tank ($)", 0.0, 50000.0, def_mob)
+        tank_unit_cap = c_s1.number_input("Tank Cap (Gal)", 1000.0, 100000.0, 10000.0)
+        tank_mob_cost = c_s2.number_input("Mob Cost/Tank ($)", 0.0, 50000.0, 5000.0)
         tank_area_unit = st.number_input("Area per Tank (m²)", 10.0, 200.0, 40.0)
 
     dist_gas_main_m = st.number_input("Distance to Gas Main (m)", 10.0, 20000.0, 1000.0, step=50.0)
@@ -385,7 +389,8 @@ with st.sidebar:
     st.header(t["sb_7"])
     gas_price = st.number_input("Gas Price (USD/MMBtu)", 1.0, 20.0, 6.5)
     
-    if virtual_pipe_mode in ["LNG", "CNG"]:
+    # LNG Premium Logic (New v50)
+    if is_lng_primary:
         vp_premium = st.number_input("Virtual Pipe Premium ($/MMBtu)", 0.0, 15.0, 4.0)
         gas_price += vp_premium
 
@@ -588,7 +593,7 @@ else:
 
 water_cons_daily_m3 = water_cons_m3_hr * 24
 
-# --- G. LOGISTICS ---
+# --- G. LOGISTICS (UPDATED v50) ---
 total_mmbtu_day = total_fuel_input_mmbtu_hr * 24
 peak_scfh = total_fuel_input_mmbtu_hr * 1000 
 req_pressure_min = eng_data.get('gas_pressure_min_psi', 0.5)
@@ -601,24 +606,13 @@ rec_pipe_dia = max(4, math.ceil(math.sqrt(target_area_ft2 * 4 / math.pi) * 12))
 
 num_tanks = 0; log_capex = 0; log_text = "Pipeline"; storage_area_m2 = 0 
 
-if virtual_pipe_mode == "LNG":
-    vol_day = total_mmbtu_day * 12.5
+if has_lng_storage:
+    vol_day = total_mmbtu_day * 12.5 # Gal LNG per MMBtu
+    # If backup, we calculate tanks based on autonomy days
+    # If primary, same logic.
     num_tanks = math.ceil((vol_day * storage_days)/tank_unit_cap)
     log_capex = num_tanks * tank_mob_cost
-    log_text = f"LNG: {vol_day:,.0f} gpd"
-    storage_area_m2 = num_tanks * tank_area_unit
-elif virtual_pipe_mode == "CNG":
-    vol_day = total_mmbtu_day * 1000
-    num_tanks = math.ceil((vol_day * storage_days)/tank_unit_cap)
-    log_capex = num_tanks * tank_mob_cost
-    log_text = f"CNG: {vol_day/1e6:.2f} MMscfd"
-    storage_area_m2 = num_tanks * tank_area_unit
-elif virtual_pipe_mode in ["Diesel", "Propane"]:
-    conv = 7.3 if virtual_pipe_mode == "Diesel" else 11.0
-    vol_day = total_mmbtu_day * conv
-    num_tanks = math.ceil((vol_day * storage_days)/tank_unit_cap)
-    log_capex = num_tanks * tank_mob_cost
-    log_text = f"{virtual_pipe_mode}: {vol_day:,.0f} gpd"
+    log_text = f"LNG Storage: {vol_day:,.0f} gpd"
     storage_area_m2 = num_tanks * tank_area_unit
 
 # --- H. EMISSIONS ---
@@ -643,7 +637,7 @@ area_bess = bess_power_total * 30
 area_sub = 2500
 total_area_m2 = (area_gen + storage_area_m2 + area_chp + area_bess + area_sub) * 1.2
 
-# --- J. FINANCIALS & NPV (ENHANCED) ---
+# --- J. FINANCIALS & NPV ---
 base_gen_cost_kw = gen_unit_cost 
 gen_cost_total = (installed_cap * 1000) * base_gen_cost_kw / 1e6 
 
@@ -660,7 +654,9 @@ if use_bess:
     bess_om_annual = (bess_power_total * 1000 * bess_om_kw_yr) 
 
 pipe_cost_m = 50 * rec_pipe_dia 
-pipeline_capex_m = (pipe_cost_m * dist_gas_main_m) / 1e6 if virtual_pipe_mode == "Pipeline" else 0
+pipeline_capex_m = (pipe_cost_m * dist_gas_main_m) / 1e6 
+# Pipeline cost applies unless it is 100% Virtual
+if is_lng_primary: pipeline_capex_m = 0
 
 cost_items = [
     {"Item": "Generation Units", "Default Index": 1.00, "Cost (M USD)": gen_cost_total},
@@ -815,14 +811,17 @@ with t2:
     col1, col2 = st.columns(2)
     with col1:
         st.subheader("Logistics: " + virtual_pipe_mode)
-        if virtual_pipe_mode != "Pipeline":
-            st.metric("Daily Volume", log_text)
+        # Modified Logic for v50 (LNG Backup vs Primary)
+        if has_lng_storage:
+            st.metric("LNG Daily Volume", log_text)
             st.metric("Assets Req.", f"{num_tanks} Tanks")
             st.write(f"**Storage Area:** {storage_area_m2:.0f} m²")
             st.write(f"**Logistics CAPEX:** ${log_capex:,.0f}")
-        else:
+        
+        if use_pipeline:
             st.success(f"Pipeline Connected. Dia: {rec_pipe_dia}\"")
-            st.write(f"**Pipeline CAPEX:** ${pipeline_capex_m:.2f} M")
+            if pipeline_capex_m > 0:
+                st.write(f"**Pipeline CAPEX:** ${pipeline_capex_m:.2f} M")
             
         st.subheader("Footprint Estimates")
         df_foot = pd.DataFrame({
@@ -965,4 +964,4 @@ with t4:
 
 # --- FOOTER ---
 st.markdown("---")
-st.caption("CAT Primary Power Solutions | v2026.49 | Noise Mitigation & Area Calc")
+st.caption("CAT Primary Power Solutions | v2026.50 | LNG Backup Logic")
