@@ -6,7 +6,7 @@ import plotly.express as px
 import plotly.graph_objects as go
 
 # --- PAGE CONFIGURATION ---
-st.set_page_config(page_title="CAT Primary Power Solutions v59", page_icon="⚡", layout="wide")
+st.set_page_config(page_title="CAT Primary Power Solutions v60", page_icon="⚡", layout="wide")
 
 # ==============================================================================
 # 0. HYBRID DATA LIBRARY
@@ -918,13 +918,14 @@ with t3:
 with t4:
     st.subheader("Financial Feasibility & NPV Analysis")
     
-    # LCOE OPTIMIZER LOGIC (v59)
+    # LCOE OPTIMIZER LOGIC (v60: UI Fixes)
     if enable_lcoe_target and target_lcoe > 0:
         if lcoe > target_lcoe:
-            st.error(f"⚠️ **Target Missed:** Current LCOE (${lcoe:.4f}/kWh) > Target (${target_lcoe:.4f}/kWh)")
+            st.error(f"⚠️ **Target Missed:** Current LCOE **${lcoe:.4f}/kWh** > Target **${target_lcoe:.4f}/kWh**")
             st.markdown("### 📉 Cost Reduction Solver")
             
-            c_sol1, c_sol2, c_sol3 = st.columns(3)
+            # Expanded to 4 columns for horizontal layout
+            c_sol1, c_sol2, c_sol3, c_sol4 = st.columns(4)
             
             # Sim 1: Reduce Reserve
             if n_reserve > 0:
@@ -933,9 +934,19 @@ with t4:
                 sim_capex = (sim_n * 1000 * gen_unit_cost) / 1e6
                 sim_annual_capex = (sim_capex * 1e6) * crf
                 sim_lcoe = (fuel_cost_year + om_cost_year + sim_annual_capex + repowering_annualized) / (mwh_year * 1000)
+                
+                # Recalc reliability for display
+                n_pool_sim = (n_running + (n_reserve - 1))
+                prob_gen_sim = 0.0
+                for k in range(n_running, n_pool_sim + 1):
+                    comb = math.comb(n_pool_sim, k)
+                    prob = comb * (prob_gen_unit ** k) * ((1 - prob_gen_unit) ** (n_pool_sim - k))
+                    prob_gen_sim += prob
+                
                 c_sol1.info(f"🔻 **Reduce Reliability (N+{n_reserve-1})**")
                 c_sol1.metric("New LCOE", f"${sim_lcoe:.4f}", f"{sim_lcoe - lcoe:.4f}")
-                c_sol1.caption("Risk: Lower uptime probability.")
+                c_sol1.write(f"**New Fleet:** {n_total-1} Units")
+                c_sol1.write(f"**Avail:** {prob_gen_sim*100:.3f}%")
             
             # Sim 2: Remove BESS
             if use_bess:
@@ -946,7 +957,12 @@ with t4:
                 
                 c_sol2.info(f"🔋 **Remove BESS**")
                 c_sol2.metric("New LCOE", f"${sim_lcoe_bess:.4f}", f"{sim_lcoe_bess - lcoe:.4f}")
-                c_sol2.caption("Risk: Poor transient response.")
+                c_sol2.write(f"**BESS Cap:** 0 MW")
+                # Calc reliability drop (Gen Only vs Gen+BESS)
+                # Current reliability is system_reliability_pct
+                # New reliability is prob_gen_sys * 100 (since BESS is removed)
+                rel_drop = system_reliability_pct - (prob_gen_sys * 100)
+                c_sol2.write(f"**Avail Drop:** -{rel_drop:.3f}%")
 
             # Sim 4: Remove LNG
             if has_lng_storage:
@@ -959,7 +975,9 @@ with t4:
                 
                 sim_lcoe_lng = (sim_fuel_cost + om_cost_year + sim_annual_capex + repowering_annualized) / (mwh_year * 1000)
                 
-                st.warning(f"🚚 **Remove LNG Infrastructure:** New LCOE **${sim_lcoe_lng:.4f}** (Delta: {sim_lcoe_lng - lcoe:.4f})")
+                c_sol3.warning(f"🚚 **Remove LNG**")
+                c_sol3.metric("New LCOE", f"${sim_lcoe_lng:.4f}", f"{sim_lcoe_lng - lcoe:.4f}")
+                c_sol3.caption("Risk: Pipeline dependency only.")
 
             # Sim 5: Remove CHP
             if include_chp:
@@ -969,10 +987,12 @@ with t4:
                 
                 sim_lcoe_chp = (sim_fuel_cost + om_cost_year + sim_annual_capex + repowering_annualized) / (mwh_year * 1000)
                 
-                st.warning(f"❄️ **Remove Tri-Gen (Elec Cooling):** New LCOE **${sim_lcoe_chp:.4f}** (Delta: {sim_lcoe_chp - lcoe:.4f})")
+                c_sol4.warning(f"❄️ **Remove Tri-Gen**")
+                c_sol4.metric("New LCOE", f"${sim_lcoe_chp:.4f}", f"{sim_lcoe_chp - lcoe:.4f}")
+                c_sol4.caption("Risk: Higher PUE, Electric Cooling.")
 
         else:
-            st.success(f"🎉 **Target Met:** Current LCOE (**${lcoe:.4f}/kWh**) is below Target (**${target_lcoe:.4f}/kWh**).")
+            st.success(f"🎉 **Target Met:** Current LCOE **${lcoe:.4f}/kWh** is below Target **${target_lcoe:.4f}/kWh**.")
 
     # 1. Cost Index Editor
     st.info(f"**Inst. Ratio Auto-Calc:** Installation Cost (${gen_install_cost:.0f}/kW) vs Equipment Cost (${gen_unit_cost:.0f}/kW)")
@@ -1059,5 +1079,4 @@ with t4:
 
 # --- FOOTER ---
 st.markdown("---")
-st.caption("CAT Primary Power Solutions | v2026.59 | Target-Driven Optimization")
-
+st.caption("CAT Primary Power Solutions | v2026.60 | Refined LCOE Solver UI")
