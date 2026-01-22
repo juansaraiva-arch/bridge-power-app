@@ -6,7 +6,7 @@ import plotly.express as px
 import plotly.graph_objects as go
 
 # --- PAGE CONFIGURATION ---
-st.set_page_config(page_title="CAT Primary Power Solutions v66", page_icon="⚡", layout="wide")
+st.set_page_config(page_title="CAT Primary Power Solutions v67", page_icon="⚡", layout="wide")
 
 # ==============================================================================
 # 0. HYBRID DATA LIBRARY
@@ -713,6 +713,8 @@ c4.metric(t["kpi_pue"], f"{pue_calc:.3f}", f"Cooling: {cooling_mode}")
 
 st.divider()
 
+t1, t2, t3, t4 = st.tabs(["⚙️ Engineering", "🧪 Physics & Logistics", "❄️ Tri-Gen", "💰 Financials & Payback"])
+
 with t1:
     col1, col2 = st.columns(2)
     with col1:
@@ -851,7 +853,6 @@ with t3:
 with t4:
     st.subheader("Financial Feasibility & NPV Analysis")
     
-    # LCOE OPTIMIZER LOGIC (v66: Tech Switch + Removed TriGen)
     if enable_lcoe_target and target_lcoe > 0:
         if lcoe > target_lcoe:
             st.error(f"⚠️ **Target Missed:** Current LCOE **${lcoe:.4f}/kWh** > Target **${target_lcoe:.4f}/kWh**")
@@ -860,7 +861,6 @@ with t4:
             # Optimized Columns (Reduced to 4 since CHP removed)
             c_sol1, c_sol2, c_sol3, c_sol4 = st.columns(4)
             
-            # Sim 1: Reduce Reserve
             if n_reserve > 0:
                 sim_n = n_total - 1
                 sim_cap = sim_n * unit_site_cap
@@ -880,25 +880,22 @@ with t4:
                 c_sol1.write(f"**New Fleet:** {n_total-1} Units")
                 c_sol1.write(f"**Avail:** {prob_gen_sim*100:.3f}%")
             
-            # Sim 2: Remove BESS
             if use_bess:
                 sim_total_capex = initial_capex_sum - bess_capex_m 
                 sim_annual_capex = (sim_total_capex * 1e6) * crf
-                sim_om = (mwh_year * om_var_price) # Only Gen O&M
+                sim_om = (mwh_year * om_var_price)
                 sim_lcoe_bess = (fuel_cost_year + sim_om + sim_annual_capex) / (mwh_year * 1000)
                 
                 c_sol2.info(f"🔋 **Remove BESS**")
                 c_sol2.metric("New LCOE", f"${sim_lcoe_bess:.4f}", f"{sim_lcoe_bess - lcoe:.4f}")
                 c_sol2.markdown(":red[**Risk: Poor transient response.**]")
 
-            # Sim 3: Tech Switch (Recalculated)
             best_tech_name = None
             best_tech_lcoe = lcoe
             
             for name, specs in leps_gas_library.items():
                 if name == selected_model: continue 
                 
-                # Simplified re-sizing for candidate
                 sim_unit_cap = specs['iso_rating_mw'] * derate_factor_calc
                 if use_bess:
                      sim_n_run = math.ceil((p_gen_bus_req / (1 - gen_parasitic_pct)) / (sim_unit_cap * target_load_factor))
@@ -909,9 +906,6 @@ with t4:
                 sim_gen_cost = (sim_n_tot * 1000 * specs['est_cost_kw']) / 1e6
                 sim_inst_cost = (sim_n_tot * 1000 * specs['est_install_kw']) / 1e6
                 
-                # Approx Total Capex with new machine
-                # Note: Assuming BESS, Logs, Emissions cost roughly same absolute value for simplification or proportional
-                # For high level check, we keep other buckets constant but swap Gen+Inst cost
                 sim_tot_capex = sim_gen_cost + sim_inst_cost + bess_capex_m + (log_capex/1e6) + (at_capex_total/1e6)
                 if include_chp: sim_tot_capex += (sim_gen_cost * idx_chp) 
                 
@@ -932,7 +926,6 @@ with t4:
                 c_sol3.metric("New LCOE", f"${best_tech_lcoe:.4f}", f"{best_tech_lcoe - lcoe:.4f}")
                 c_sol3.caption("Optimization: Better CAPEX/Eff mix.")
 
-            # Sim 4: Remove LNG
             if has_lng_storage:
                 sim_fuel_price = gas_price
                 if is_lng_primary: sim_fuel_price -= vp_premium 
@@ -950,7 +943,6 @@ with t4:
         else:
             st.success(f"🎉 **Target Met:** Current LCOE ${lcoe:.4f}/kWh is below Target ${target_lcoe:.4f}/kWh.")
 
-    # 1. Cost Index Editor
     st.info(f"**Inst. Ratio Auto-Calc:** Installation Cost (${gen_install_cost:.0f}/kW) vs Equipment Cost (${gen_unit_cost:.0f}/kW)")
     
     st.markdown(f"👇 **Edit Indices to Adjust CAPEX:** (Base: **${gen_unit_cost:.0f}/kW**)")
@@ -963,7 +955,6 @@ with t4:
         use_container_width=True
     )
     
-    # Recalculate Total CAPEX Dynamic
     final_capex_df = edited_capex.copy()
     total_capex_dynamic = 0
     for index, row in final_capex_df.iterrows():
@@ -974,7 +965,6 @@ with t4:
         else:
             total_capex_dynamic += gen_cost_total * row['Default Index']
     
-    # Recalculate Financials based on edited CAPEX
     capex_annualized_dyn = (total_capex_dynamic * 1e6) * crf
     total_annual_cost_dyn = fuel_cost_year + om_cost_year + capex_annualized_dyn + repowering_annualized
     lcoe_dyn = total_annual_cost_dyn / (mwh_year * 1000)
@@ -987,12 +977,10 @@ with t4:
     else:
         payback_str_dyn = "N/A"; roi_dyn = 0
     
-    # Display Financials
     c_f1, c_f2, c_f3, c_f4, c_f5 = st.columns(5)
     c_f1.metric("Total CAPEX (USD)", f"${total_capex_dynamic:.2f} M")
     c_f2.metric("LCOE (Prime)", f"${lcoe_dyn:.4f} / kWh")
     
-    # Dynamic Headers based on Mode
     label_savings = "Annual Savings" if not enable_lcoe_target else "Annual Value (vs Target)"
     label_npv = "NPV (20yr)" if not enable_lcoe_target else "NPV (vs Target)"
     
@@ -1000,7 +988,6 @@ with t4:
     c_f4.metric(label_npv, f"${npv_dyn/1e6:.2f} M")
     c_f5.metric("Payback", payback_str_dyn, f"ROI: {roi_dyn:.1f}%")
     
-    # Sensitivity Chart (New in v45)
     st.divider()
     st.subheader("📊 Gas Price Sensitivity & Sweet Spot")
     
@@ -1023,7 +1010,6 @@ with t4:
     if use_bess:
         st.caption(f"ℹ️ **Repowering:** Includes NPV of battery replacement every {bess_life_batt} years.")
 
-    # Chart
     cost_data = pd.DataFrame({
         "Component": ["Fuel", "O&M (OPEX)", "CAPEX (Amortized)", "Repowering (Future)"],
         "$/kWh": [
@@ -1040,4 +1026,4 @@ with t4:
 
 # --- FOOTER ---
 st.markdown("---")
-st.caption("CAT Primary Power Solutions | v2026.66 | Tech Switch Added")
+st.caption("CAT Primary Power Solutions | v2026.67 | Tech Switch Logic")
