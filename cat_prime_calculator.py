@@ -1065,6 +1065,3 @@ with t4:
 # --- FOOTER ---
 st.markdown("---")
 st.caption("CAT Primary Power Solutions | v2026.58 | Full LCOE Solver (LNG/CHP Support)")
-
-
-[Image of battery energy storage system]
