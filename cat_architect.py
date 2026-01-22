@@ -7,7 +7,7 @@ import json
 import io
 
 # --- PAGE CONFIGURATION ---
-st.set_page_config(page_title="CAT Power Architect v2.1", page_icon="🏗️", layout="wide")
+st.set_page_config(page_title="CAT Power Master Architect v3.0", page_icon="🏗️", layout="wide")
 
 # ==============================================================================
 # 1. THE DATA & PHYSICS ENGINE (LOGIC LAYER)
@@ -22,7 +22,7 @@ leps_gas_library = {
     "G20CM34": {"type": "Med Speed",  "iso_mw": 9.76,"eff": 0.475, "hr": 7480, "step": 10.0, "nox": 0.5, "cost_kw": 700.0, "inst_kw": 1250.0,"xd": 0.16}
 }
 
-# FULL ENGINE
+# FULL CALCULATION ENGINE
 def calculate_kpis(inputs):
     res = {}
     
@@ -68,29 +68,35 @@ def calculate_kpis(inputs):
     # BESS
     capex_bess = 0
     if inputs.get("use_bess", True):
-        mw_bess = unit_site_cap * (1 + inputs.get("n_bess_red", 0))
-        mwh_bess = mw_bess * 2
-        capex_bess = (mw_bess * 1000 * inputs.get("cost_bess_inv", 120)) + (mwh_bess * 1000 * inputs.get("cost_bess_kwh", 280))
+        # BESS Sizing Logic
+        step_req_mw = p_it * (inputs.get("step_load_req", 40.0)/100)
+        mw_bess_req = max(step_req_mw, unit_site_cap) * (1 + inputs.get("n_bess_red", 0))
+        mwh_bess = mw_bess_req * 2 # 2 hr duration default
+        
+        capex_bess = (mw_bess_req * 1000 * inputs.get("cost_bess_inv", 120)) + (mwh_bess * 1000 * inputs.get("cost_bess_kwh", 280))
         
     # Logistics (LNG)
     capex_log = 0
     fuel_mmbtu_hr = p_gross * (spec['hr']/1000)
     if inputs.get("has_lng", True):
         vol_day = (fuel_mmbtu_hr * 24) * 12.5 # approx gal/mmbtu
-        n_tanks = math.ceil((vol_day * inputs.get("lng_days", 5)) / 10000)
-        capex_log = n_tanks * 50000 
+        n_tanks = math.ceil((vol_day * inputs.get("lng_days", 5)) / inputs.get("tank_size", 10000))
+        capex_log = n_tanks * inputs.get("tank_cost", 50000)
         
     # Pipeline
     if not inputs.get("is_lng_primary", False):
-        capex_log += (inputs.get("dist_pipe", 1000) * 200) # Simple pipe cost estimate
+        capex_log += (inputs.get("dist_pipe", 1000) * 200) 
         
     # Emissions
     capex_emis = 0
     total_bhp = p_gross * 1341
     nox_tpy = (spec['nox'] * total_bhp * 8760) / 907185
-    limit_nox = 250.0 if inputs.get("reg_zone") == "USA - EPA Major" else 9999
+    limit_nox = 250.0 if inputs.get("reg_zone") == "USA - EPA Major" else (150.0 if inputs.get("reg_zone") == "EU Standard" else 9999)
+    
     if nox_tpy > limit_nox:
-        capex_emis = installed_mw * 1000 * 60 # SCR cost
+        capex_emis += installed_mw * 1000 * inputs.get("cost_scr", 60.0)
+    if inputs.get("force_oxicat", False):
+        capex_emis += installed_mw * 1000 * inputs.get("cost_oxicat", 15.0)
         
     # Tri-Gen
     capex_chp = 0
@@ -103,20 +109,20 @@ def calculate_kpis(inputs):
     gas_price = inputs.get("gas_price", 6.5)
     if inputs.get("is_lng_primary", False): gas_price += inputs.get("vp_premium", 4.0)
     
-    # Heat Rate Adjustment (Simple curve)
+    # Heat Rate Adjustment
     lf_real = p_gross / (n_run * unit_site_cap)
     eff_factor = 1.0 if lf_real > 0.75 else (0.85 + (0.6*(lf_real-0.5)))
     hr_site = spec['hr'] / max(0.5, eff_factor)
     
     fuel_cost_yr = p_gross * (hr_site/1000) * gas_price * 8760
     om_cost_yr = p_net * 8760 * inputs.get("om_var", 12.0)
-    if inputs.get("use_bess", True): om_cost_yr += (unit_site_cap * 1000 * 10) # BESS fixed O&M
+    if inputs.get("use_bess", True): om_cost_yr += (mw_bess_req * 1000 * inputs.get("bess_om", 10.0))
     
     # Repowering
     repower_ann = 0
     if inputs.get("use_bess", True):
-        # Simplified annualized repowering
-        repower_ann = (capex_bess * 0.6) / 10 # Battery replacement annuity approx
+        # Simplified annualized repowering (Bat replacement every 10 yrs)
+        repower_ann = ((mwh_bess * 1000 * inputs.get("cost_bess_kwh", 280)) / 1e6) / ((1+inputs.get("wacc", 0.08))**10) * 1e6 # PV approx
         
     wacc = inputs.get("wacc", 0.08)
     years = inputs.get("years", 20)
@@ -138,9 +144,9 @@ def calculate_kpis(inputs):
         "fuel_cost": fuel_cost_yr,
         "om_cost": om_cost_yr,
         "capex_ann": capex_ann,
-        "hr_net": (p_gross * (hr_site/1000) * 1e6) / (p_net), # Btu/kWh net
+        "hr_net": (p_gross * (hr_site/1000) * 1e6) / (p_net),
         "nox_tpy": nox_tpy,
-        "avail_est": 1.0 - (math.pow(0.02, inputs.get("n_reserve", 1))) # Rough prob
+        "avail_est": 1.0 - (math.pow(0.02, inputs.get("n_reserve", 1)))
     }
     return res
 
@@ -148,20 +154,29 @@ def calculate_kpis(inputs):
 # 2. STATE & PERSISTENCE (DATABASE LAYER)
 # ==============================================================================
 
-# Default Master Input List
+# Default Master Input List (The "Truth" - Expanded for V3)
 defaults = {
-    # 1. Load & Tech
-    "model": "G3520K", "p_it": 100.0, "dc_aux": 0.05, "use_chp": True, "pue_input": 1.45,
-    "volt_kv": 13.8, "step_req": 40.0,
-    # 2. Site
-    "site_temp": 35, "site_alt": 100, "mn": 80, "reg_zone": "LatAm / No-Reg",
-    "dist_neighbor": 100.0,
-    # 3. Infra
-    "use_bess": True, "n_bess_red": 0, "has_lng": True, "is_lng_primary": False,
-    "dist_pipe": 1000.0, "lng_days": 5, "n_maint": 1, "n_reserve": 1,
-    # 4. Costs
-    "cost_kw": 575.0, "inst_kw": 650.0, "cost_bess_kwh": 280.0, "cost_bess_inv": 120.0,
-    "gas_price": 6.5, "vp_premium": 4.0, "om_var": 12.0, 
+    # 1. Global & Site
+    "unit_system": "Metric (SI)", "freq": 60, "site_temp": 35, "site_alt": 100, "mn": 80,
+    "reg_zone": "LatAm / No-Reg", "dist_neighbor": 100.0,
+    
+    # 2. Load & Config
+    "dc_type": "AI Factory", "p_it": 100.0, "dc_aux": 0.05, "avail_req": 99.99, 
+    "step_load_req": 40.0, "volt_kv": 13.8,
+    
+    # 3. Technology
+    "model": "G3520K", "n_maint": 1, "n_reserve": 1, "cost_kw": 575.0, "inst_kw": 650.0,
+    "gen_parasitic": 0.025,
+    "use_bess": True, "n_bess_red": 0, "cost_bess_kwh": 280.0, "cost_bess_inv": 120.0, "bess_om": 10.0,
+    
+    # 4. Logistics & BOP
+    "use_chp": True, "pue_input": 1.45, "dist_loss": 0.01,
+    "has_lng": True, "is_lng_primary": False, "lng_days": 5, "tank_size": 10000.0, "tank_cost": 50000.0,
+    "dist_pipe": 1000.0, "supply_press": 4.0,
+    "cost_scr": 60.0, "cost_oxicat": 15.0, "force_oxicat": False,
+    
+    # 5. Economics
+    "gas_price": 6.5, "vp_premium": 4.0, "om_var": 12.0, "grid_price": 0.15,
     "wacc": 0.08, "years": 20, "target_lcoe": 0.11
 }
 
@@ -174,13 +189,13 @@ if 'project' not in st.session_state:
     }
     st.session_state['active_scenario'] = "Base Case"
 else:
-    # PATCH: If project exists from previous version but misses 'created_at'
+    # Patch for date
     if 'created_at' not in st.session_state['project']:
         st.session_state['project']['created_at'] = str(pd.Timestamp.now())
 
 def get_val(key):
     scen = st.session_state['active_scenario']
-    return st.session_state['project']['scenarios'][scen].get(key, defaults[key])
+    return st.session_state['project']['scenarios'][scen].get(key, defaults.get(key, 0)) # Safer get
 
 def set_val(key, value):
     scen = st.session_state['active_scenario']
@@ -191,11 +206,10 @@ def set_val(key, value):
 # ==============================================================================
 
 with st.sidebar:
-    st.title("CAT Architect v2.1")
+    st.title("CAT Architect v3.0")
     
     # --- Persistence Section ---
     with st.expander("💾 Project File (Database)", expanded=False):
-        # Export
         proj_data = json.dumps(st.session_state['project'], indent=2)
         st.download_button(
             label="Download Project (.json)",
@@ -204,7 +218,6 @@ with st.sidebar:
             mime="application/json",
         )
         
-        # Import
         uploaded_file = st.file_uploader("Load Project", type=["json"])
         if uploaded_file is not None:
             try:
@@ -227,7 +240,6 @@ with st.sidebar:
     new_scen = st.text_input("New Scenario", placeholder="Name...")
     if st.button("➕ Create Scenario"):
         if new_scen and new_scen not in scenarios:
-            # Clone current active scenario
             st.session_state['project']['scenarios'][new_scen] = st.session_state['project']['scenarios'][active].copy()
             st.success(f"Created {new_scen}")
             st.rerun()
@@ -242,111 +254,205 @@ tab_edit, tab_comp, tab_rep = st.tabs(["📝 Scenario Editor", "📊 Comparative
 with tab_edit:
     st.subheader(f"Editing: {st.session_state['active_scenario']}")
     
-    # 4 Column Layout for Density
-    c1, c2, c3, c4 = st.columns(4)
+    # SUB-TABS FOR ORGANIZATION
+    t_glob, t_load, t_tech, t_log, t_fin = st.tabs([
+        "🌍 Global & Site", "🏗️ Load & Config", "⚙️ Technology", "🚚 Logistics & BOP", "💰 Economics"
+    ])
     
-    # --- COLUMN 1: LOAD & TECH ---
-    with c1:
-        st.markdown("### ⚡ Load & Tech")
-        
-        # Model
-        curr = get_val("model")
-        sel = st.selectbox("Generator", list(leps_gas_library.keys()), index=list(leps_gas_library.keys()).index(curr))
-        if sel != curr: set_val("model", sel)
-        
-        # Power
-        curr = get_val("p_it")
-        val = st.number_input("IT Load (MW)", 1.0, 1000.0, float(curr))
-        if val != curr: set_val("p_it", val)
-        
-        curr = get_val("dc_aux")
-        val = st.number_input("DC Aux (%)", 0.0, 20.0, float(curr)*100) / 100
-        if val != curr: set_val("dc_aux", val)
-        
-        # Cooling
-        curr = get_val("use_chp")
-        val = st.checkbox("Tri-Gen (CHP)", curr)
-        if val != curr: set_val("use_chp", val)
-        
-        if not val:
-            curr = get_val("pue_input")
-            v2 = st.number_input("Target PUE", 1.0, 2.0, float(curr))
-            if v2 != curr: set_val("pue_input", v2)
-
-    # --- COLUMN 2: SITE & DERATES ---
-    with c2:
-        st.markdown("### 🌍 Site Conditions")
-        
-        curr = get_val("site_temp")
-        val = st.slider("Max Temp (°C)", 0, 55, int(curr))
-        if val != curr: set_val("site_temp", val)
-        
-        curr = get_val("site_alt")
-        val = st.number_input("Altitude (m)", 0, 5000, int(curr))
-        if val != curr: set_val("site_alt", val)
-        
-        curr = get_val("mn")
-        val = st.number_input("Methane #", 30, 100, int(curr))
-        if val != curr: set_val("mn", val)
-        
-        curr = get_val("reg_zone")
-        val = st.selectbox("Emissions", ["LatAm / No-Reg", "EU Standard", "USA - EPA Major"], index=["LatAm / No-Reg", "EU Standard", "USA - EPA Major"].index(curr))
-        if val != curr: set_val("reg_zone", val)
-
-    # --- COLUMN 3: INFRASTRUCTURE ---
-    with c3:
-        st.markdown("### 🔋 Infrastructure")
-        
-        # BESS
-        curr = get_val("use_bess")
-        val = st.checkbox("BESS Active", curr)
-        if val != curr: set_val("use_bess", val)
-        
-        if val:
-            curr = get_val("n_bess_red")
-            v2 = st.number_input("BESS Redundancy (N+)", 0, 2, int(curr))
-            if v2 != curr: set_val("n_bess_red", v2)
+    # 1. GLOBAL & SITE
+    with t_glob:
+        c1, c2 = st.columns(2)
+        with c1:
+            curr = get_val("unit_system")
+            v = st.radio("Units", ["Metric (SI)", "Imperial (US)"], horizontal=True, index=0 if "Metric" in curr else 1)
+            if v != curr: set_val("unit_system", v)
             
-        # LNG
-        curr = get_val("has_lng")
-        val = st.checkbox("LNG Storage", curr)
-        if val != curr: set_val("has_lng", val)
-        
-        if val:
-            curr = get_val("is_lng_primary")
-            v2 = st.checkbox("Virtual Pipeline (100%)", curr)
-            if v2 != curr: set_val("is_lng_primary", v2)
+            curr = get_val("freq")
+            v = st.radio("Frequency", [50, 60], horizontal=True, index=0 if curr==50 else 1)
+            if v != curr: set_val("freq", v)
             
-        # Fleet
-        c3a, c3b = st.columns(2)
-        curr = get_val("n_reserve")
-        v1 = c3a.number_input("Res.", 0, 5, int(curr))
-        if v1 != curr: set_val("n_reserve", v1)
-        
-        curr = get_val("n_maint")
-        v2 = c3b.number_input("Maint.", 0, 5, int(curr))
-        if v2 != curr: set_val("n_maint", v2)
+            curr = get_val("reg_zone")
+            v = st.selectbox("Regulatory Zone", ["LatAm / No-Reg", "EU Standard", "USA - EPA Major"], index=["LatAm / No-Reg", "EU Standard", "USA - EPA Major"].index(curr))
+            if v != curr: set_val("reg_zone", v)
+            
+        with c2:
+            curr = get_val("site_temp")
+            v = st.slider("Max Ambient Temp (°C)", 0, 55, int(curr))
+            if v != curr: set_val("site_temp", v)
+            
+            curr = get_val("site_alt")
+            v = st.number_input("Altitude (m)", 0, 5000, int(curr))
+            if v != curr: set_val("site_alt", v)
+            
+            curr = get_val("mn")
+            v = st.number_input("Methane Number (MN)", 30, 100, int(curr))
+            if v != curr: set_val("mn", v)
+            
+            curr = get_val("dist_neighbor")
+            v = st.number_input("Dist. Neighbor (m)", 10.0, 5000.0, float(curr))
+            if v != curr: set_val("dist_neighbor", v)
 
-    # --- COLUMN 4: FINANCIALS ---
-    with c4:
-        st.markdown("### 💰 Financials")
-        
-        curr = get_val("gas_price")
-        val = st.number_input("Gas ($/MMBtu)", 0.5, 50.0, float(curr))
-        if val != curr: set_val("gas_price", val)
-        
-        if get_val("is_lng_primary"):
-            curr = get_val("vp_premium")
-            val = st.number_input("Logistics Premium", 0.0, 10.0, float(curr))
-            if val != curr: set_val("vp_premium", val)
+    # 2. LOAD & CONFIG
+    with t_load:
+        c1, c2 = st.columns(2)
+        with c1:
+            curr = get_val("dc_type")
+            v = st.selectbox("Data Center Type", ["AI Factory", "Standard Hyperscale"], index=0 if curr=="AI Factory" else 1)
+            if v != curr: set_val("dc_type", v)
             
-        curr = get_val("cost_kw")
-        val = st.number_input("Genset ($/kW)", 100.0, 2000.0, float(curr))
-        if val != curr: set_val("cost_kw", val)
-        
-        curr = get_val("wacc")
-        val = st.number_input("WACC (%)", 0.0, 20.0, float(curr)*100) / 100
-        if val != curr: set_val("wacc", val)
+            curr = get_val("p_it")
+            v = st.number_input("Critical IT Load (MW)", 1.0, 1000.0, float(curr))
+            if v != curr: set_val("p_it", v)
+            
+            curr = get_val("dc_aux")
+            v = st.number_input("DC Aux (%)", 0.0, 20.0, float(curr)*100)/100
+            if v != curr: set_val("dc_aux", v)
+            
+        with c2:
+            curr = get_val("avail_req")
+            v = st.number_input("Availability Target (%)", 90.0, 99.9999, float(curr), format="%.4f")
+            if v != curr: set_val("avail_req", v)
+            
+            curr = get_val("step_load_req")
+            v = st.number_input("Step Load Req (%)", 0.0, 100.0, float(curr))
+            if v != curr: set_val("step_load_req", v)
+            
+            curr = get_val("volt_kv")
+            v = st.number_input("Connection Voltage (kV)", 0.4, 230.0, float(curr))
+            if v != curr: set_val("volt_kv", v)
+
+    # 3. TECHNOLOGY
+    with t_tech:
+        c1, c2 = st.columns(2)
+        with c1:
+            st.markdown("**Generators**")
+            curr = get_val("model")
+            v = st.selectbox("Model Selection", list(leps_gas_library.keys()), index=list(leps_gas_library.keys()).index(curr))
+            if v != curr: set_val("model", v)
+            
+            curr = get_val("n_reserve")
+            v = st.number_input("Reserve Units (N+)", 0, 5, int(curr))
+            if v != curr: set_val("n_reserve", v)
+            
+            curr = get_val("n_maint")
+            v = st.number_input("Maintenance Units", 0, 5, int(curr))
+            if v != curr: set_val("n_maint", v)
+            
+            curr = get_val("gen_parasitic")
+            v = st.number_input("Gen Parasitics (%)", 0.0, 10.0, float(curr)*100)/100
+            if v != curr: set_val("gen_parasitic", v)
+
+        with c2:
+            st.markdown("**BESS**")
+            curr = get_val("use_bess")
+            v = st.checkbox("Enable BESS", curr)
+            if v != curr: set_val("use_bess", v)
+            
+            if v:
+                curr = get_val("n_bess_red")
+                v = st.number_input("BESS Redundancy (N+)", 0, 2, int(curr))
+                if v != curr: set_val("n_bess_red", v)
+                
+                curr = get_val("cost_bess_kwh")
+                v = st.number_input("Battery Cost ($/kWh)", 100.0, 1000.0, float(curr))
+                if v != curr: set_val("cost_bess_kwh", v)
+                
+                curr = get_val("cost_bess_inv")
+                v = st.number_input("Inverter Cost ($/kW)", 50.0, 1000.0, float(curr))
+                if v != curr: set_val("cost_bess_inv", v)
+
+    # 4. LOGISTICS & BOP
+    with t_log:
+        c1, c2, c3 = st.columns(3)
+        with c1:
+            st.markdown("**Fuel Logistics**")
+            curr = get_val("has_lng")
+            v = st.checkbox("Include LNG Storage", curr)
+            if v != curr: set_val("has_lng", v)
+            
+            if v:
+                curr = get_val("is_lng_primary")
+                v = st.checkbox("LNG is Primary (Virtual Pipe)", curr)
+                if v != curr: set_val("is_lng_primary", v)
+                
+                curr = get_val("lng_days")
+                v = st.number_input("LNG Autonomy (Days)", 1, 60, int(curr))
+                if v != curr: set_val("lng_days", v)
+                
+                curr = get_val("tank_cost")
+                v = st.number_input("Unit Tank Cost ($)", 1000.0, 200000.0, float(curr))
+                if v != curr: set_val("tank_cost", v)
+            
+            if not get_val("is_lng_primary"):
+                curr = get_val("dist_pipe")
+                v = st.number_input("Pipeline Dist (m)", 10.0, 20000.0, float(curr))
+                if v != curr: set_val("dist_pipe", v)
+
+        with c2:
+            st.markdown("**Cooling**")
+            curr = get_val("use_chp")
+            v = st.checkbox("Tri-Gen (Absorption)", curr)
+            if v != curr: set_val("use_chp", v)
+            
+            if not v:
+                curr = get_val("pue_input")
+                v = st.number_input("Target PUE (Elec)", 1.05, 2.0, float(curr))
+                if v != curr: set_val("pue_input", v)
+                
+            curr = get_val("dist_loss")
+            v = st.number_input("Dist. Losses (%)", 0.0, 10.0, float(curr)*100)/100
+            if v != curr: set_val("dist_loss", v)
+
+        with c3:
+            st.markdown("**Emissions Hardware**")
+            curr = get_val("cost_scr")
+            v = st.number_input("SCR Cost ($/kW)", 0.0, 200.0, float(curr))
+            if v != curr: set_val("cost_scr", v)
+            
+            curr = get_val("force_oxicat")
+            v = st.checkbox("Force Oxicat", curr)
+            if v != curr: set_val("force_oxicat", v)
+            
+            if v:
+                curr = get_val("cost_oxicat")
+                v = st.number_input("Oxicat Cost ($/kW)", 0.0, 100.0, float(curr))
+                if v != curr: set_val("cost_oxicat", v)
+
+    # 5. ECONOMICS
+    with t_fin:
+        c1, c2 = st.columns(2)
+        with c1:
+            curr = get_val("gas_price")
+            v = st.number_input("Gas Price ($/MMBtu)", 0.5, 50.0, float(curr))
+            if v != curr: set_val("gas_price", v)
+            
+            if get_val("is_lng_primary"):
+                curr = get_val("vp_premium")
+                v = st.number_input("LNG Premium ($/MMBtu)", 0.0, 10.0, float(curr))
+                if v != curr: set_val("vp_premium", v)
+                
+            curr = get_val("om_var")
+            v = st.number_input("Variable O&M ($/MWh)", 1.0, 100.0, float(curr))
+            if v != curr: set_val("om_var", v)
+            
+        with c2:
+            st.markdown("**CAPEX Overrides ($/kW)**")
+            curr = get_val("cost_kw")
+            v = st.number_input("Genset Equip", 100.0, 2000.0, float(curr))
+            if v != curr: set_val("cost_kw", v)
+            
+            curr = get_val("inst_kw")
+            v = st.number_input("Installation", 50.0, 2000.0, float(curr))
+            if v != curr: set_val("inst_kw", v)
+            
+            st.markdown("**Financials**")
+            curr = get_val("wacc")
+            v = st.number_input("WACC (%)", 0.0, 20.0, float(curr)*100)/100
+            if v != curr: set_val("wacc", v)
+            
+            curr = get_val("target_lcoe")
+            v = st.number_input("Target LCOE ($/kWh)", 0.05, 0.50, float(curr))
+            if v != curr: set_val("target_lcoe", v)
 
     # --- LIVE RESULTS BAR ---
     st.divider()
@@ -380,7 +486,7 @@ with tab_comp:
         df = df.set_index('Scenario')
         
         # Select KPIs
-        df_view = df[['lcoe', 'total_capex', 'fuel_cost', 'n_total', 'model', 'hr_net']].copy()
+        df_view = df[['lcoe', 'total_capex', 'fuel_cost', 'n_total', 'model', 'hr_net', 'pue']].copy()
         
         # Style
         st.dataframe(
@@ -388,9 +494,10 @@ with tab_comp:
                 'lcoe': '${:.4f}', 
                 'total_capex': '${:,.1f}M', 
                 'fuel_cost': '${:,.0f}/yr',
-                'hr_net': '{:,.0f}'
-            }).highlight_min(subset=['lcoe', 'total_capex'], color='lightgreen', axis=0)
-              .highlight_max(subset=['lcoe', 'total_capex'], color='lightpink', axis=0),
+                'hr_net': '{:,.0f}',
+                'pue': '{:.3f}'
+            }).highlight_min(subset=['lcoe', 'total_capex', 'pue'], color='lightgreen', axis=0)
+              .highlight_max(subset=['lcoe', 'total_capex', 'pue'], color='lightpink', axis=0),
             use_container_width=True
         )
         
@@ -407,7 +514,7 @@ with tab_rep:
     st.header("Project Executive Report")
     st.write(f"**Project:** {st.session_state['project']['name']}")
     
-    # Safe date access with fallback
+    # Safe date access
     date_created = st.session_state['project'].get('created_at', 'N/A')
     st.write(f"**Date:** {date_created}")
     
@@ -420,9 +527,8 @@ with tab_rep:
     best_params = st.session_state['project']['scenarios'][best_scen]
     st.json(best_params)
     
-    # Placeholder for PDF export logic
     st.info("To save this report, use the browser's 'Print to PDF' function or download the Project JSON in the sidebar.")
 
 # --- FOOTER ---
 st.markdown("---")
-st.caption("CAT Power Master Architect | v2.1 | Auto-Healing Fix")
+st.caption("CAT Power Master Architect | v3.0 | Full Input Control")
