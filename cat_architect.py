@@ -30,8 +30,7 @@ def calculate_kpis(inputs):
     is_imperial = inputs.get("unit_system") == "Imperial (US)"
     
     # Load & Power Balance
-    p_it = inpu
-    ts.get("p_it", 100.0)
+    p_it = inputs.get("p_it", 100.0)
     dc_aux = inputs.get("dc_aux", 0.05)
     use_chp = inputs.get("use_chp", True)
     
@@ -540,4 +539,3 @@ with tab_rep:
 # --- FOOTER ---
 st.markdown("---")
 st.caption("CAT Power Architect v4.0 | Probabilistic Sizing & Editable Economics")
-
