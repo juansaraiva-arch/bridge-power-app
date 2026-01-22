@@ -246,7 +246,7 @@ else:
 t_sld, t_specs = st.tabs(["📐 Ring Topology Diagram", "📋 Detailed Specs"])
 
 with t_sld:
-    st.markdown("**Diagram Note:** This schematic represents an **Iso-Parallel Ring**. All buses are interconnected via Tie-Breakers (and potentially Current Limiting Reactors).")
+    st.markdown("**Diagram Note:** This schematic represents an **Iso-Parallel Ring**. All buses are interconnected via Tie-Breakers (and potentially Current Limiting Reactors). ")
     
     dot = graphviz.Digraph()
     dot.attr(rankdir='LR', splines='ortho') # Left-to-Right for Ring layout
