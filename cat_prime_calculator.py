@@ -6,7 +6,7 @@ import plotly.express as px
 import plotly.graph_objects as go
 
 # --- PAGE CONFIGURATION ---
-st.set_page_config(page_title="CAT Primary Power Solutions v60", page_icon="⚡", layout="wide")
+st.set_page_config(page_title="CAT Primary Power Solutions v62", page_icon="⚡", layout="wide")
 
 # ==============================================================================
 # 0. HYBRID DATA LIBRARY
@@ -171,7 +171,6 @@ with st.sidebar:
     def_use_bess = True if is_ai else False
     
     p_it = st.number_input("Critical IT Load (MW)", 1.0, 1000.0, 100.0, step=10.0)
-    # MOVED DC AUX HERE
     dc_aux_pct = st.number_input("DC Aux (%)", 0.0, 20.0, 5.0) / 100.0
     
     avail_req = st.number_input("Required Availability (%)", 90.0, 99.99999, 99.99, format="%.5f")
@@ -264,7 +263,6 @@ with st.sidebar:
         hr_btu = hr_user / hr_conv_factor
         final_elec_eff = 3412.14 / hr_btu
 
-    # MOVED LOSSES & PARASITICS HERE
     c_aux1, c_aux2 = st.columns(2)
     dist_loss_pct = c_aux1.number_input("Dist Loss (%)", 0.0, 10.0, 1.0) / 100.0
     gen_parasitic_pct = c_aux2.number_input("Parasitics (%)", 0.0, 10.0, 2.5) / 100.0
@@ -360,14 +358,18 @@ with st.sidebar:
     # -------------------------------------------------------------------------
     st.header(t["sb_3"])
     
-    # Grid Price Benchmark
-    grid_price = st.number_input("Grid Price Benchmark ($/kWh)", 0.05, 0.50, 0.15, help="Used for Savings comparison/ROI.")
-    
-    # LCOE Optimization
+    # LCOE Optimization (Updated Logic v62)
     enable_lcoe_target = st.checkbox("Activate LCOE Optimization Loop")
-    target_lcoe = 0.0
+    
+    benchmark_price = 0.0
     if enable_lcoe_target:
         target_lcoe = st.number_input("Target LCOE ($/kWh)", 0.05, 0.50, 0.11, step=0.005) 
+        benchmark_price = target_lcoe
+        grid_price = 0.0 # Not used
+    else:
+        grid_price = st.number_input("Grid Price Benchmark ($/kWh)", 0.05, 0.50, 0.15, help="Used for Savings comparison/ROI.")
+        benchmark_price = grid_price
+        target_lcoe = 0.0
     
     gas_price = st.number_input("Gas Price ($/MMBtu)", 1.0, 20.0, 6.5)
     
@@ -405,7 +407,6 @@ if volt_mode == "Manual Selection":
     op_voltage_kv = manual_voltage_kv
     rec_voltage = f"{manual_voltage_kv:.1f} kV (User)"
 else:
-    # Auto-Recommend based on ANSI/IEEE Amperage Constraints
     if is_50hz:
         rec_voltage = "11 kV" if p_gen_bus_req < 20 else ("33 kV" if p_gen_bus_req > 50 else "11 kV / 33 kV")
         op_voltage_kv = 11.0 if p_gen_bus_req < 35 else 33.0
@@ -423,23 +424,15 @@ n_transient = 0
 n_headroom = 0
 
 if use_bess:
-    # BESS Optimized
     target_load_factor = 0.95 
     n_base_mw = p_gen_bus_req / (1 - gen_parasitic_pct) 
     n_running = math.ceil(n_base_mw / (unit_site_cap * target_load_factor))
-    
     bess_power_req = max(step_mw_req, unit_site_cap) 
-    
     driver_txt = "Steady State (BESS Optimized)"
 else:
-    # NO BESS - HARD CONSTRAINTS
     n_steady = math.ceil(p_gen_bus_req / (unit_site_cap * 0.90))
-    
-    # Transient Stiffness
     unit_step_mw_cap = unit_site_cap * (step_load_cap / 100.0)
     n_transient = math.ceil(step_mw_req / unit_step_mw_cap)
-    
-    # Headroom
     n_headroom = n_steady
     while True:
         total_cap = n_headroom * unit_site_cap
@@ -448,13 +441,11 @@ else:
         if (total_cap - gross_needed) >= step_mw_req:
             break
         n_headroom += 1
-        
     n_running = max(n_steady, n_transient, n_headroom)
     
     if n_running == n_transient: driver_txt = f"Transient Stiffness (Step: {step_load_cap}%)"
     elif n_running == n_headroom: driver_txt = "Spinning Reserve (Headroom)"
     else: driver_txt = "Steady State Load"
-    
     bess_power_req = 0
 
 # --- C. RELIABILITY (PROBABILISTIC - GEN + BESS HYBRID LOOP) ---
@@ -468,7 +459,6 @@ n_reserve_gen = 0
 n_redundant_bess = 0 
 
 while True:
-    # 1. Calc Generator Reliability
     n_pool_gen = n_running + n_reserve_gen
     prob_gen_sys = 0.0
     for k in range(n_running, n_pool_gen + 1):
@@ -476,41 +466,35 @@ while True:
         prob = comb * (prob_gen_unit ** k) * ((1 - prob_gen_unit) ** (n_pool_gen - k))
         prob_gen_sys += prob
         
-    # 2. Calc BESS Reliability
     if use_bess:
         p_fail_bess_unit = 1.0 - prob_bess_unit
         prob_bess_sys = 1.0 - (p_fail_bess_unit ** (1 + n_redundant_bess))
     else:
         prob_bess_sys = 1.0
         
-    # 3. Combined System Reliability
     system_reliability = prob_gen_sys * prob_bess_sys
+    if system_reliability >= target_reliability: break
     
-    if system_reliability >= target_reliability:
-        break
-        
     if use_bess and (prob_bess_sys < prob_gen_sys):
         n_redundant_bess += 1
     else:
         n_reserve_gen += 1
-        
     if n_reserve_gen > 25 or n_redundant_bess > 10: break
 
-n_reserve = n_reserve_gen # ALIAS FIX
+n_reserve = n_reserve_gen 
 n_total = n_running + n_maint + n_reserve
 installed_cap = n_total * unit_site_cap
 system_reliability_pct = system_reliability * 100.0
 
-reliability_bottleneck = "Generators" # Default init
+reliability_bottleneck = "Generators" 
 if use_bess and (prob_bess_sys < prob_gen_sys):
     reliability_bottleneck = "BESS Availability"
 
-# BESS Final Sizing
 bess_multiplier = 1 + n_redundant_bess
 bess_power_total = bess_power_req * bess_multiplier
 bess_energy_total = bess_power_total * 2 
 
-# --- D. THERMODYNAMICS (AGGRESSIVE CURVE) ---
+# --- D. THERMODYNAMICS ---
 total_parasitics_mw = n_running * (unit_size_iso * gen_parasitic_pct)
 p_gross_total = p_gen_bus_req + total_parasitics_mw
 real_load_factor = p_gross_total / (n_running * unit_site_cap)
@@ -531,13 +515,10 @@ eff_factor = max(eff_factor, 0.50)
 gross_eff_site = base_eff * eff_factor
 gross_hr_lhv = 3412.14 / gross_eff_site
 
-# Fuel Calculation (Fix)
 total_fuel_input_mmbtu_hr = p_gross_total * (gross_hr_lhv / 1000) 
-
 net_hr_lhv = (total_fuel_input_mmbtu_hr * 1e6) / (p_net_req * 1000)
 net_hr_hhv = net_hr_lhv * 1.108
 
-# Display Heat Rate logic (RESTORED FIX v56)
 if is_imperial:
     hr_primary = math.ceil(net_hr_lhv)
     unit_primary = "Btu/kWh"
@@ -549,14 +530,11 @@ else:
     hr_secondary = math.ceil(net_hr_lhv)
     unit_secondary = "Btu/kWh"
 
-# --- E. SHORT CIRCUIT (FIXED v55) ---
+# --- E. SHORT CIRCUIT ---
 gen_mva_total = installed_cap / 0.8
 gen_sc_mva = gen_mva_total / xd_2_pu
-
-# BESS SC Contribution
 bess_sc_mva = 0.0
 if use_bess:
-    # Logic: BESS Inverters contribute ~1.5x Rated MVA during fault
     bess_sc_mva = bess_power_total * 1.5
 
 total_sc_mva = gen_sc_mva + bess_sc_mva
@@ -636,12 +614,8 @@ if enable_optimizer and max_area_input > 0:
     area_utilization_pct = min(100.0, (total_area_m2 / max_area_limit_m2) * 100)
     is_area_exceeded = total_area_m2 > max_area_limit_m2
     
-    # Calculate Savings Scenarios
-    # Scenario A: No LNG (Only if LNG is present)
     savings_lng = storage_area_m2 * 1.2 
-    # Scenario B: No CHP
     savings_chp = (area_chp - (p_net_req * 10)) * 1.2 
-    # Scenario C: Turbines (Approx 40% of RICE Gen Area)
     savings_turb = (area_gen * 0.60) * 1.2 
 
 # --- J. FINANCIALS & NPV ---
@@ -701,8 +675,8 @@ capex_annualized = (initial_capex_sum * 1e6) * crf
 total_annual_cost = fuel_cost_year + om_cost_year + capex_annualized + repowering_annualized
 lcoe = total_annual_cost / (mwh_year * 1000)
 
-# NPV Logic
-annual_grid_cost = mwh_year * 1000 * grid_price
+# NPV Logic (Uses benchmark_price)
+annual_grid_cost = mwh_year * 1000 * benchmark_price
 annual_prime_opex = fuel_cost_year + om_cost_year
 annual_savings = annual_grid_cost - annual_prime_opex
 
@@ -721,7 +695,7 @@ else:
     payback_str = "N/A"; roi_simple = 0
 
 # --- K. SENSITIVITY ANALYSIS (SWEET SPOT) ---
-annual_grid_revenue = mwh_year * 1000 * grid_price
+annual_grid_revenue = mwh_year * 1000 * benchmark_price
 fixed_costs_annual = om_cost_year + capex_annualized + repowering_annualized
 fuel_mmbtu_annual = total_fuel_input_mmbtu_hr * 8760
 
@@ -918,13 +892,12 @@ with t3:
 with t4:
     st.subheader("Financial Feasibility & NPV Analysis")
     
-    # LCOE OPTIMIZER LOGIC (v60: UI Fixes)
+    # LCOE OPTIMIZER LOGIC (v62: UI & Logic Fixes)
     if enable_lcoe_target and target_lcoe > 0:
         if lcoe > target_lcoe:
             st.error(f"⚠️ **Target Missed:** Current LCOE **${lcoe:.4f}/kWh** > Target **${target_lcoe:.4f}/kWh**")
             st.markdown("### 📉 Cost Reduction Solver")
             
-            # Expanded to 4 columns for horizontal layout
             c_sol1, c_sol2, c_sol3, c_sol4 = st.columns(4)
             
             # Sim 1: Reduce Reserve
@@ -935,7 +908,7 @@ with t4:
                 sim_annual_capex = (sim_capex * 1e6) * crf
                 sim_lcoe = (fuel_cost_year + om_cost_year + sim_annual_capex + repowering_annualized) / (mwh_year * 1000)
                 
-                # Recalc reliability for display
+                # Recalc reliability
                 n_pool_sim = (n_running + (n_reserve - 1))
                 prob_gen_sim = 0.0
                 for k in range(n_running, n_pool_sim + 1):
@@ -957,12 +930,7 @@ with t4:
                 
                 c_sol2.info(f"🔋 **Remove BESS**")
                 c_sol2.metric("New LCOE", f"${sim_lcoe_bess:.4f}", f"{sim_lcoe_bess - lcoe:.4f}")
-                c_sol2.write(f"**BESS Cap:** 0 MW")
-                # Calc reliability drop (Gen Only vs Gen+BESS)
-                # Current reliability is system_reliability_pct
-                # New reliability is prob_gen_sys * 100 (since BESS is removed)
-                rel_drop = system_reliability_pct - (prob_gen_sys * 100)
-                c_sol2.write(f"**Avail Drop:** -{rel_drop:.3f}%")
+                c_sol2.markdown(":red[**Risk: Poor transient response.**]") # FIXED
 
             # Sim 4: Remove LNG
             if has_lng_storage:
@@ -1035,8 +1003,13 @@ with t4:
     c_f1, c_f2, c_f3, c_f4, c_f5 = st.columns(5)
     c_f1.metric("Total CAPEX (USD)", f"${total_capex_dynamic:.2f} M")
     c_f2.metric("LCOE (Prime)", f"${lcoe_dyn:.4f} / kWh")
-    c_f3.metric("Annual Savings", f"${annual_savings/1e6:.2f} M")
-    c_f4.metric("NPV (20yr)", f"${npv_dyn/1e6:.2f} M")
+    
+    # Dynamic Headers based on Mode
+    label_savings = "Annual Savings" if not enable_lcoe_target else "Annual Value (vs Target)"
+    label_npv = "NPV (20yr)" if not enable_lcoe_target else "NPV (vs Target)"
+    
+    c_f3.metric(label_savings, f"${annual_savings/1e6:.2f} M")
+    c_f4.metric(label_npv, f"${npv_dyn/1e6:.2f} M")
     c_f5.metric("Payback", payback_str_dyn, f"ROI: {roi_dyn:.1f}%")
     
     # Sensitivity Chart (New in v45)
@@ -1044,13 +1017,13 @@ with t4:
     st.subheader("📊 Gas Price Sensitivity & Sweet Spot")
     
     if breakeven_gas_price > 0:
-        st.success(f"🎯 **Gas Price to match Grid Energy Purchase = ${breakeven_gas_price:.2f}/MMBtu**")
+        st.success(f"🎯 **Gas Price to match Benchmark = ${breakeven_gas_price:.2f}/MMBtu**")
     else:
-        st.error("⚠️ **No Sweet Spot:** Prime Power is more expensive than Grid even with free gas (Fixed Costs too high).")
+        st.error("⚠️ **No Sweet Spot:** Prime Power is more expensive even with free gas (Fixed Costs too high).")
         
     fig_sens = go.Figure()
     fig_sens.add_trace(go.Scatter(x=gas_prices_x, y=lcoe_y, mode='lines', name='LCOE (Prime)'))
-    fig_sens.add_hline(y=grid_price, line_dash="dash", line_color="red", annotation_text="Grid Price")
+    fig_sens.add_hline(y=benchmark_price, line_dash="dash", line_color="red", annotation_text="Benchmark Price")
     fig_sens.update_layout(
         title="LCOE vs Gas Price",
         xaxis_title="Gas Price (USD/MMBtu)",
@@ -1079,4 +1052,4 @@ with t4:
 
 # --- FOOTER ---
 st.markdown("---")
-st.caption("CAT Primary Power Solutions | v2026.60 | Refined LCOE Solver UI")
+st.caption("CAT Primary Power Solutions | v2026.62 | Refined LCOE Solver Logic")
