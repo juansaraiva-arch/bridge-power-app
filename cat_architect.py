@@ -7,7 +7,7 @@ import json
 import io
 
 # --- PAGE CONFIGURATION ---
-st.set_page_config(page_title="CAT Power Master Architect v2.0", page_icon="🏗️", layout="wide")
+st.set_page_config(page_title="CAT Power Architect v2.1", page_icon="🏗️", layout="wide")
 
 # ==============================================================================
 # 1. THE DATA & PHYSICS ENGINE (LOGIC LAYER)
@@ -22,7 +22,7 @@ leps_gas_library = {
     "G20CM34": {"type": "Med Speed",  "iso_mw": 9.76,"eff": 0.475, "hr": 7480, "step": 10.0, "nox": 0.5, "cost_kw": 700.0, "inst_kw": 1250.0,"xd": 0.16}
 }
 
-# FULL ENGINE from Light Version logic
+# FULL ENGINE
 def calculate_kpis(inputs):
     res = {}
     
@@ -148,7 +148,7 @@ def calculate_kpis(inputs):
 # 2. STATE & PERSISTENCE (DATABASE LAYER)
 # ==============================================================================
 
-# Default Master Input List (Expanded from v68)
+# Default Master Input List
 defaults = {
     # 1. Load & Tech
     "model": "G3520K", "p_it": 100.0, "dc_aux": 0.05, "use_chp": True, "pue_input": 1.45,
@@ -165,6 +165,7 @@ defaults = {
     "wacc": 0.08, "years": 20, "target_lcoe": 0.11
 }
 
+# --- AUTO-HEALING STATE INIT ---
 if 'project' not in st.session_state:
     st.session_state['project'] = {
         "name": "Project Alpha",
@@ -172,6 +173,10 @@ if 'project' not in st.session_state:
         "scenarios": { "Base Case": defaults.copy() }
     }
     st.session_state['active_scenario'] = "Base Case"
+else:
+    # PATCH: If project exists from previous version but misses 'created_at'
+    if 'created_at' not in st.session_state['project']:
+        st.session_state['project']['created_at'] = str(pd.Timestamp.now())
 
 def get_val(key):
     scen = st.session_state['active_scenario']
@@ -186,7 +191,7 @@ def set_val(key, value):
 # ==============================================================================
 
 with st.sidebar:
-    st.title("CAT Architect v2.0")
+    st.title("CAT Architect v2.1")
     
     # --- Persistence Section ---
     with st.expander("💾 Project File (Database)", expanded=False):
@@ -401,7 +406,10 @@ with tab_comp:
 with tab_rep:
     st.header("Project Executive Report")
     st.write(f"**Project:** {st.session_state['project']['name']}")
-    st.write(f"**Date:** {st.session_state['project']['created_at']}")
+    
+    # Safe date access with fallback
+    date_created = st.session_state['project'].get('created_at', 'N/A')
+    st.write(f"**Date:** {date_created}")
     
     best_scen = df_view['lcoe'].idxmin()
     best_val = df_view['lcoe'].min()
@@ -417,4 +425,4 @@ with tab_rep:
 
 # --- FOOTER ---
 st.markdown("---")
-st.caption("CAT Power Master Architect | v2.0 | Full Edition with Persistence")
+st.caption("CAT Power Master Architect | v2.1 | Auto-Healing Fix")
