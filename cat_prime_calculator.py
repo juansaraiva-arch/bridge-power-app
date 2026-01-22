@@ -6,7 +6,7 @@ import plotly.express as px
 import plotly.graph_objects as go
 
 # --- PAGE CONFIGURATION ---
-st.set_page_config(page_title="CAT Primary Power Solutions v57", page_icon="⚡", layout="wide")
+st.set_page_config(page_title="CAT Primary Power Solutions v58", page_icon="⚡", layout="wide")
 
 # ==============================================================================
 # 0. HYBRID DATA LIBRARY
@@ -359,6 +359,8 @@ with st.sidebar:
     # GROUP 3: ECONOMICS (THE OUTCOME)
     # -------------------------------------------------------------------------
     st.header(t["sb_3"])
+    target_lcoe = st.number_input("Target LCOE ($/kWh)", 0.05, 0.50, 0.11, step=0.005) # NEW TARGET INPUT
+    
     gas_price = st.number_input("Gas Price ($/MMBtu)", 1.0, 20.0, 6.5)
     
     if is_lng_primary:
@@ -617,7 +619,7 @@ area_bess = bess_power_total * 30
 area_sub = 2500
 total_area_m2 = (area_gen + storage_area_m2 + area_chp + area_bess + area_sub) * 1.2
 
-# --- NEW: AREA OPTIMIZER LOGIC (v51) ---
+# --- NEW: AREA OPTIMIZER LOGIC (v51/57) ---
 max_area_limit_m2 = 0
 if enable_optimizer and max_area_input > 0:
     if area_unit_sel == "Acres": max_area_limit_m2 = max_area_input / 0.000247105
@@ -628,8 +630,8 @@ if enable_optimizer and max_area_input > 0:
     is_area_exceeded = total_area_m2 > max_area_limit_m2
     
     # Calculate Savings Scenarios
-    # Scenario A: No LNG
-    savings_lng = storage_area_m2 * 1.2 # Including safety margin
+    # Scenario A: No LNG (Only if LNG is present)
+    savings_lng = storage_area_m2 * 1.2 
     # Scenario B: No CHP
     savings_chp = (area_chp - (p_net_req * 10)) * 1.2 
     # Scenario C: Turbines (Approx 40% of RICE Gen Area)
@@ -686,7 +688,6 @@ mwh_year = p_net_req * 8760
 fuel_cost_year = total_fuel_input_mmbtu_hr * gas_price * 8760
 om_cost_year = (mwh_year * om_var_price) + bess_om_annual 
 
-# Initial Total CAPEX
 initial_capex_sum = df_capex_base["Cost (M USD)"].sum()
 capex_annualized = (initial_capex_sum * 1e6) * crf
 
@@ -705,7 +706,6 @@ else:
 
 npv = pv_savings - (initial_capex_sum * 1e6) - (repowering_pv_m * 1e6)
 
-# Payback
 if annual_savings > 0:
     payback_years = (initial_capex_sum * 1e6) / annual_savings
     roi_simple = (annual_savings / (initial_capex_sum * 1e6)) * 100
@@ -852,7 +852,7 @@ with t2:
                 
                 c_opt1, c_opt2, c_opt3 = st.columns(3)
                 
-                # Scenario A (Conditional)
+                # Scenario A (Conditional - Only show if LNG is actually used)
                 if has_lng_storage and savings_lng > 0:
                     c_opt1.warning("Option A: Remove LNG Backup")
                     c_opt1.write(f"Save ~{savings_lng*(10.764 if is_imperial else 1):,.0f} {u_area_s}")
@@ -911,6 +911,74 @@ with t3:
 with t4:
     st.subheader("Financial Feasibility & NPV Analysis")
     
+    # LCOE OPTIMIZER LOGIC (v58)
+    if lcoe > target_lcoe:
+        st.error(f"⚠️ **Target Missed:** Current LCOE (${lcoe:.4f}) > Target (${target_lcoe:.4f})")
+        st.markdown("### 📉 Cost Reduction Solver")
+        
+        c_sol1, c_sol2, c_sol3 = st.columns(3)
+        
+        # Sim 1: Reduce Reserve
+        if n_reserve > 0:
+            sim_n = n_total - 1
+            sim_cap = sim_n * unit_site_cap
+            sim_capex = (sim_n * 1000 * gen_unit_cost) / 1e6
+            # Simplified Recalc
+            sim_annual_capex = (sim_capex * 1e6) * crf
+            sim_lcoe = (fuel_cost_year + om_cost_year + sim_annual_capex + repowering_annualized) / (mwh_year * 1000)
+            c_sol1.info(f"🔻 **Reduce Reliability (N+{n_reserve-1})**")
+            c_sol1.metric("New LCOE", f"${sim_lcoe:.4f}", f"{sim_lcoe - lcoe:.4f}")
+            c_sol1.caption("Risk: Lower uptime probability.")
+        
+        # Sim 2: Remove BESS
+        if use_bess:
+            sim_capex_bess = 0 # Removed
+            sim_om_bess = 0
+            # Recalc Total
+            sim_total_capex = initial_capex_sum - bess_capex_m 
+            sim_annual_capex = (sim_total_capex * 1e6) * crf
+            sim_repower = 0 # No BESS repower
+            sim_om = (mwh_year * om_var_price) # Only Gen O&M
+            sim_lcoe_bess = (fuel_cost_year + sim_om + sim_annual_capex) / (mwh_year * 1000)
+            
+            c_sol2.info(f"🔋 **Remove BESS**")
+            c_sol2.metric("New LCOE", f"${sim_lcoe_bess:.4f}", f"{sim_lcoe_bess - lcoe:.4f}")
+            c_sol2.caption("Risk: Poor transient response.")
+
+        # Sim 3: Switch Tech (Iterate Library)
+        best_tech = None
+        min_tech_lcoe = 999.0
+        
+        # Sim 4: Remove LNG (Logic v58)
+        if has_lng_storage:
+            # Savings: Log CAPEX + (Maybe) Fuel Premium
+            sim_log_capex = 0 # Removed Tanks
+            sim_fuel_price = gas_price
+            if is_lng_primary: sim_fuel_price -= vp_premium # Remove Premium
+            
+            sim_fuel_cost = total_fuel_input_mmbtu_hr * sim_fuel_price * 8760
+            sim_total_capex = initial_capex_sum - (log_capex/1e6)
+            sim_annual_capex = (sim_total_capex * 1e6) * crf
+            
+            sim_lcoe_lng = (sim_fuel_cost + om_cost_year + sim_annual_capex + repowering_annualized) / (mwh_year * 1000)
+            
+            st.warning(f"🚚 **Remove LNG Infrastructure:** New LCOE **${sim_lcoe_lng:.4f}** (Delta: {sim_lcoe_lng - lcoe:.4f})")
+
+        # Sim 5: Remove CHP (Logic v58)
+        if include_chp:
+            # Savings: CHP CAPEX. Penalty: Fuel +15% (Conservative PUE est)
+            sim_chp_capex = 0
+            sim_total_capex = initial_capex_sum - (gen_cost_total * idx_chp)
+            sim_annual_capex = (sim_total_capex * 1e6) * crf
+            sim_fuel_cost = fuel_cost_year * 1.15 # Penalty
+            
+            sim_lcoe_chp = (sim_fuel_cost + om_cost_year + sim_annual_capex + repowering_annualized) / (mwh_year * 1000)
+             
+            st.warning(f"❄️ **Remove Tri-Gen (Elec Cooling):** New LCOE **${sim_lcoe_chp:.4f}** (Delta: {sim_lcoe_chp - lcoe:.4f})")
+
+    else:
+        st.success(f"🎉 **Target Met:** Current LCOE (${lcoe:.4f}) is below Target (${target_lcoe:.4f})")
+
     # 1. Cost Index Editor
     st.info(f"**Inst. Ratio Auto-Calc:** Installation Cost (${gen_install_cost:.0f}/kW) vs Equipment Cost (${gen_unit_cost:.0f}/kW)")
     
@@ -996,4 +1064,7 @@ with t4:
 
 # --- FOOTER ---
 st.markdown("---")
-st.caption("CAT Primary Power Solutions | v2026.57 | Clean Layout")
+st.caption("CAT Primary Power Solutions | v2026.58 | Full LCOE Solver (LNG/CHP Support)")
+
+
+[Image of battery energy storage system]
