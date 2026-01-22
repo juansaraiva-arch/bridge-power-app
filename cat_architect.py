@@ -9,7 +9,7 @@ import json
 import time
 
 # --- PAGE CONFIGURATION ---
-st.set_page_config(page_title="CAT Architect v5.2", page_icon="🏗️", layout="wide")
+st.set_page_config(page_title="CAT Architect v5.3", page_icon="🏗️", layout="wide")
 
 # --- CSS FOR REPORT FORMATTING ---
 st.markdown("""
@@ -663,9 +663,9 @@ with tab_comp:
     )
     
     c_p1, c_p2, c_p3 = st.columns(3)
-    c_p1.plotly_chart(fig_print_1, use_container_width=True)
-    c_p2.plotly_chart(fig_print_2, use_container_width=True)
-    c_p3.plotly_chart(fig_print_3, use_container_width=True)
+    c_p1.plotly_chart(fig_print_1, use_container_width=True, key="comp_lcoe")
+    c_p2.plotly_chart(fig_print_2, use_container_width=True, key="comp_capex")
+    c_p3.plotly_chart(fig_print_3, use_container_width=True, key="comp_fuel")
 
 # --- TAB 3: REPORT GENERATOR ---
 with tab_rep:
@@ -747,10 +747,12 @@ with tab_rep:
     values = [best_kpis['fuel_cost'], best_kpis['capex_ann'], best_kpis['om_cost']]
     fig_donut = go.Figure(data=[go.Pie(labels=labels, values=values, hole=.4)])
     fig_donut.update_layout(height=300, margin=dict(t=0, b=0, l=0, r=0))
-    st.plotly_chart(fig_donut, use_container_width=True)
+    st.plotly_chart(fig_donut, use_container_width=True, key="rep_donut")
 
-    # --- PAGE 2 ---
+    # --- PAGE BREAK ---
     st.markdown('<div class="page-break"></div>', unsafe_allow_html=True)
+
+    # --- PAGE 2: COMPARISON ---
     st.markdown("## 📊 Scenario Analysis")
     
     st.table(df[cols_show].style.format({
@@ -762,11 +764,11 @@ with tab_rep:
     }))
     
     st.markdown("### Comparative Charts")
-    c1, c2 = st.columns(2)
-    c1.plotly_chart(fig_print_1, use_container_width=True)
-    c2.plotly_chart(fig_print_2, use_container_width=True)
-    st.plotly_chart(fig_print_3, use_container_width=True)
+    c_p1, c_p2 = st.columns(2)
+    c_p1.plotly_chart(fig_print_1, use_container_width=True, key="rep_lcoe")
+    c_p2.plotly_chart(fig_print_2, use_container_width=True, key="rep_capex")
+    st.plotly_chart(fig_print_3, use_container_width=True, key="rep_fuel")
 
 # --- FOOTER ---
 st.markdown("---")
-st.caption(f"Prepared by: {st.session_state['project'].get('prepared_by')} | CAT Architect v5.2")
+st.caption(f"CAT Architect v5.3 | {proj.get('created_at','')}")
