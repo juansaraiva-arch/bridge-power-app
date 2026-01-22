@@ -208,7 +208,7 @@ defaults = {
     
     # Logistics
     "use_chp": True, "chp_cost_factor": 0.20, "pue_input": 1.45, "dist_loss": 0.01,
-    "has_lng": True, "is_lng_primary": False, "lng_days": 5, "tank_size": 10000.0,
+    "has_lng": True, "is_lng_primary": False, "lng_days": 5, "tank_size": 10000.0, "tank_cost": 50000.0,
     "dist_pipe": 1000.0, "cost_scr": 60.0, "cost_oxicat": 15.0, "force_oxicat": False,
     
     # Econ
@@ -217,6 +217,7 @@ defaults = {
     "gas_price": 6.5, "vp_premium": 4.0, "om_var": 12.0, "wacc": 0.08, "years": 20, "target_lcoe": 0.11
 }
 
+# --- AUTO-HEALING STATE INIT ---
 if 'project' not in st.session_state:
     st.session_state['project'] = {
         "name": "Project Alpha",
@@ -225,14 +226,13 @@ if 'project' not in st.session_state:
     }
     st.session_state['active_scenario'] = "Base Case"
 else:
-    # Auto-Heal: Ensure defaults exists in current state if schema changed
-    for k, v in defaults.items():
-        if k not in st.session_state['project']['scenarios'][st.session_state['active_scenario']]:
-             st.session_state['project']['scenarios'][st.session_state['active_scenario']][k] = v
+    # Patch for date
+    if 'created_at' not in st.session_state['project']:
+        st.session_state['project']['created_at'] = str(pd.Timestamp.now())
 
 def get_val(key):
     scen = st.session_state['active_scenario']
-    return st.session_state['project']['scenarios'][scen].get(key, defaults[key])
+    return st.session_state['project']['scenarios'][scen].get(key, defaults.get(key, 0))
 
 def set_val(key, value):
     scen = st.session_state['active_scenario']
@@ -403,14 +403,9 @@ with tab_edit:
                 v = st.checkbox("LNG is Primary (Virtual Pipe)", curr)
                 if v != curr: set_val("is_lng_primary", v)
                 
-                curr = get_val("lng_days")
-                v = st.number_input("LNG Autonomy (Days)", 1, 60, int(curr))
-                if v != curr: set_val("lng_days", v)
-            
-            if not get_val("is_lng_primary"):
-                curr = get_val("dist_pipe")
-                v = st.number_input("Pipeline Dist (m)", 10.0, 20000.0, float(curr))
-                if v != curr: set_val("dist_pipe", v)
+                curr = get_val("tank_cost")
+                v = st.number_input("Unit Tank Cost ($)", 1000.0, 200000.0, float(curr))
+                if v != curr: set_val("tank_cost", v)
 
         with c2:
             st.markdown("**Cooling**")
@@ -422,25 +417,12 @@ with tab_edit:
                 curr = get_val("pue_input")
                 v = st.number_input("Target PUE (Elec)", 1.05, 2.0, float(curr))
                 if v != curr: set_val("pue_input", v)
-                
-            curr = get_val("dist_loss")
-            v = st.number_input("Dist. Losses (%)", 0.0, 10.0, float(curr)*100)/100
-            if v != curr: set_val("dist_loss", v)
 
         with c3:
             st.markdown("**Emissions**")
             curr = get_val("cost_scr")
             v = st.number_input("SCR Cost ($/kW)", 0.0, 200.0, float(curr))
             if v != curr: set_val("cost_scr", v)
-            
-            curr = get_val("force_oxicat")
-            v = st.checkbox("Force Oxicat", curr)
-            if v != curr: set_val("force_oxicat", v)
-            
-            if v:
-                curr = get_val("cost_oxicat")
-                v = st.number_input("Oxicat Cost ($/kW)", 0.0, 100.0, float(curr))
-                if v != curr: set_val("cost_oxicat", v)
 
     # --- 5. ECONOMICS (Fully Editable CAPEX) ---
     with t5:
@@ -493,7 +475,7 @@ with tab_edit:
                 v = st.number_input("BESS Inverter ($/kW)", 50.0, 1000.0, float(curr))
                 if v != curr: set_val("cost_bess_inv", v)
 
-    # --- LIVE RESULTS ---
+    # --- LIVE RESULTS BAR ---
     st.divider()
     inputs = {k: get_val(k) for k in defaults.keys()}
     res = calculate_kpis(inputs)
