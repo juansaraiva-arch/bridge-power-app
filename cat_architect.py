@@ -6,7 +6,7 @@ import plotly.express as px
 import json
 
 # --- PAGE CONFIGURATION ---
-st.set_page_config(page_title="CAT Architect v4.3", page_icon="🏗️", layout="wide")
+st.set_page_config(page_title="CAT Architect v4.5", page_icon="🏗️", layout="wide")
 
 # ==============================================================================
 # 1. THE DATA & PHYSICS ENGINE
@@ -35,7 +35,6 @@ def calculate_kpis(inputs):
     
     # Cooling & PUE
     if use_chp:
-        # Thermal Recovery Estimation
         p_cooling_elec = p_it * 0.03 
         p_net = p_it * (1 + dc_aux) + p_cooling_elec
         pue = p_net / p_it
@@ -69,11 +68,9 @@ def calculate_kpis(inputs):
     n_reserve = 0
     prob_gen_sys = 0.0
     
-    # Loop to find N+ required for Generators
     for r in range(0, 20):
         n_pool = n_run + r
         p_accum = 0.0
-        # Prob(k >= n_run)
         for k in range(n_run, n_pool + 1):
             comb = math.comb(n_pool, k)
             p_accum += comb * (prob_unit_ok ** k) * ((1 - prob_unit_ok) ** (n_pool - k))
@@ -97,17 +94,10 @@ def calculate_kpis(inputs):
     bess_desc = "None"
     
     if inputs.get("use_bess", True):
-        # Base Sizing
         step_mw_req = p_it * (inputs.get("step_load_req", 40.0)/100)
         mw_bess_req = max(step_mw_req, unit_site_cap) 
         
-        # Reliability Parameters
         bess_fail_rate = inputs.get("bess_maint_pct", 0.01) + inputs.get("bess_for_pct", 0.005)
-        prob_bess_unit_ok = 1.0 - bess_fail_rate
-        
-        # Loop to find N+ for BESS
-        # Logic: We treat BESS as a single critical block. We need at least 1 "block" of capacity working.
-        # Reliability = 1 - (Fail_Rate ^ (Redundancy + 1))
         
         for r in range(0, 10):
             sys_unavail = (bess_fail_rate ** (1 + r))
@@ -121,19 +111,17 @@ def calculate_kpis(inputs):
             prob_bess_sys = sys_avail
             
         mw_bess_total = mw_bess_req * (1 + n_bess_red)
-        mwh_bess_total = mw_bess_total * 2 # 2h storage
+        mwh_bess_total = mw_bess_total * 2
         
         capex_bess = (mw_bess_total * 1000 * inputs.get("cost_bess_inv", 120)) + (mwh_bess_total * 1000 * inputs.get("cost_bess_kwh", 280))
         bess_desc = f"{mw_bess_total:.1f} MW / {mwh_bess_total:.1f} MWh (N+{n_bess_red})"
 
-    # Total System Reliability
     sys_reliability = prob_gen_sys * prob_bess_sys
 
     # --- 4. LOGISTICS & EMISSIONS ---
     capex_gen = n_total * 1000 * inputs.get("cost_kw", spec['cost_kw'])
     capex_inst = n_total * 1000 * inputs.get("inst_kw", spec['inst_kw'])
     
-    # LNG Logic
     capex_log = 0
     fuel_mmbtu_hr = p_gross * (spec['hr']/1000)
     if inputs.get("has_lng", True):
@@ -144,7 +132,6 @@ def calculate_kpis(inputs):
     if not inputs.get("is_lng_primary", False):
         capex_log += (inputs.get("dist_pipe", 1000) * 200) 
         
-    # Emissions
     capex_emis = 0
     total_bhp = p_gross * 1341
     nox_tpy = (spec['nox'] * total_bhp * 8760) / 907185
@@ -156,7 +143,6 @@ def calculate_kpis(inputs):
     if inputs.get("force_oxicat", False):
         capex_emis += installed_mw * 1000 * inputs.get("cost_oxicat", 15.0)
         
-    # Tri-Gen
     capex_chp = 0
     if use_chp:
         capex_chp = capex_gen * inputs.get("chp_cost_factor", 0.20)
@@ -179,7 +165,6 @@ def calculate_kpis(inputs):
     years = inputs.get("years", 20)
     crf = (wacc * (1 + wacc)**years) / ((1 + wacc)**years - 1)
     
-    # Repowering
     repower_ann = 0
     if inputs.get("use_bess", True):
         repower_val = (mwh_bess_total * 1000 * inputs.get("cost_bess_kwh", 280)) / 1e6
@@ -197,7 +182,6 @@ def calculate_kpis(inputs):
     noise_at_neighbor = total_source - attenuation
     noise_excess = max(0, noise_at_neighbor - inputs.get("noise_limit", 70.0))
     
-    # Heat Rate Net
     hr_net_btu = (fuel_mmbtu_hr * 1e6) / (p_net * 1000)
     
     res = {
@@ -221,7 +205,7 @@ def calculate_kpis(inputs):
     return res
 
 # ==============================================================================
-# 2. STATE & DEFAULTS
+# 2. STATE MANAGEMENT
 # ==============================================================================
 
 defaults = {
@@ -237,8 +221,6 @@ defaults = {
     # Tech
     "model": "G3520K", "gen_parasitic": 0.025, 
     "maint_outage_pct": 0.05, "forced_outage_pct": 0.02,
-    
-    # BESS
     "use_bess": True, "bess_maint_pct": 0.01, "bess_for_pct": 0.005,
     "cost_bess_kwh": 280.0, "cost_bess_inv": 120.0, "bess_om": 10.0,
     
@@ -250,7 +232,8 @@ defaults = {
     "cost_scr": 60.0, "cost_oxicat": 15.0, "force_oxicat": False, "urea_days": 7,
     
     # Econ
-    "cost_kw": 575.0, "inst_kw": 650.0,
+    "cost_kw": 575.0, "inst_kw": 650.0, "tank_cost": 50000.0,
+    "cost_bess_kwh": 280.0, "cost_bess_inv": 120.0, "bess_om": 10.0,
     "gas_price": 6.5, "vp_premium": 4.0, "om_var": 12.0, "grid_price": 0.15,
     "wacc": 0.08, "years": 20, "target_lcoe": 0.11
 }
@@ -281,7 +264,7 @@ def set_val(key, value):
 # ==============================================================================
 
 with st.sidebar:
-    st.title("CAT Architect v4.3")
+    st.title("CAT Architect v4.5")
     with st.expander("💾 Database (JSON)", expanded=False):
         proj_data = json.dumps(st.session_state['project'], indent=2)
         st.download_button("Download Project", proj_data, f"{st.session_state['project']['name']}.json", "application/json")
@@ -581,34 +564,49 @@ with tab_comp:
             r['Scenario'] = name
             
             is_imp_loc = full.get("unit_system") == "Imperial (US)"
-            r['hr_display'] = r['hr_net_btu'] if is_imp_loc else (r['hr_net_btu'] * 0.001055)
-            r['sys_reliability'] *= 100
+            # Unit Handling for Table
+            r['Net Heat Rate'] = r['hr_net_btu'] if is_imp_loc else (r['hr_net_btu'] * 0.001055)
+            r['HR Unit'] = "Btu/kWh" if is_imp_loc else "MJ/kWh"
+            
+            r['Availability (%)'] = r['sys_reliability'] * 100
+            
+            # Rename for display
+            r['LCOE ($/kWh)'] = r['lcoe']
+            r['CAPEX (M USD)'] = r['total_capex']
+            r['Fuel Cost ($/yr)'] = r['fuel_cost']
+            r['Generator Model'] = r['model']
+            r['Total Units'] = r['n_total']
+            
             all_res.append(r)
             
         df = pd.DataFrame(all_res).set_index('Scenario')
         
+        cols_show = ['LCOE ($/kWh)', 'CAPEX (M USD)', 'Fuel Cost ($/yr)', 'Total Units', 'Generator Model', 'Net Heat Rate', 'HR Unit', 'Availability (%)']
+        
+        # Display with formatting
         st.dataframe(
-            df[['lcoe', 'total_capex', 'fuel_cost', 'n_total', 'model', 'hr_display', 'sys_reliability']].style.format({
-                'lcoe': '${:.4f}', 
-                'total_capex': '${:,.1f}M', 
-                'fuel_cost': '${:,.0f}/yr', 
-                'hr_display': '{:,.0f}',
-                'sys_reliability': '{:.4f}%'
-            }).highlight_min(subset=['lcoe'], color='lightgreen').highlight_max(subset=['lcoe'], color='lightpink'),
+            df[cols_show].style.format({
+                'LCOE ($/kWh)': '${:.4f}', 
+                'CAPEX (M USD)': '${:,.1f}', 
+                'Fuel Cost ($/yr)': '${:,.0f}', 
+                'Net Heat Rate': '{:,.2f}',
+                'Availability (%)': '{:.4f}%'
+            }).highlight_min(subset=['LCOE ($/kWh)', 'CAPEX (M USD)'], color='lightgreen').highlight_max(subset=['LCOE ($/kWh)', 'CAPEX (M USD)'], color='lightpink'),
             use_container_width=True
         )
         
-        c1, c2 = st.columns(2)
-        c1.plotly_chart(px.bar(df, x=df.index, y='lcoe', color='model', text_auto='.4f', title="LCOE Comparison"), use_container_width=True)
-        c2.plotly_chart(px.bar(df, x=df.index, y='total_capex', text_auto='.1f', title="CAPEX Comparison"), use_container_width=True)
+        c1, c2, c3 = st.columns(3)
+        c1.plotly_chart(px.bar(df, x=df.index, y='LCOE ($/kWh)', color='Generator Model', text_auto='.4f', title="LCOE Comparison"), use_container_width=True)
+        c2.plotly_chart(px.bar(df, x=df.index, y='CAPEX (M USD)', text_auto='.1f', title="CAPEX Comparison"), use_container_width=True)
+        c3.plotly_chart(px.bar(df, x=df.index, y='Fuel Cost ($/yr)', text_auto='.0s', title="Annual Fuel Cost Comparison"), use_container_width=True)
 
 # --- TAB 3: REPORT ---
 with tab_rep:
     st.header("Executive Report")
-    best_scen = df['lcoe'].idxmin()
-    st.success(f"Best Scenario: **{best_scen}** (${df.loc[best_scen, 'lcoe']:.4f}/kWh)")
+    best_scen = df['LCOE ($/kWh)'].idxmin()
+    st.success(f"Best Scenario: **{best_scen}** (${df.loc[best_scen, 'LCOE ($/kWh)']:.4f}/kWh)")
     st.json(st.session_state['project']['scenarios'][best_scen])
 
 # --- FOOTER ---
 st.markdown("---")
-st.caption("CAT Architect v4.3 | Double Loop Optimization (Gen + BESS)")
+st.caption("CAT Architect v4.5 | Optimized Tables & Charts")
