@@ -6,10 +6,10 @@ import plotly.express as px
 import json
 
 # --- PAGE CONFIGURATION ---
-st.set_page_config(page_title="CAT Architect v4.1", page_icon="🏗️", layout="wide")
+st.set_page_config(page_title="CAT Architect v4.2", page_icon="🏗️", layout="wide")
 
 # ==============================================================================
-# 1. THE DATA & PHYSICS ENGINE (FULL LIGHT VERSION PORT)
+# 1. THE DATA & PHYSICS ENGINE
 # ==============================================================================
 
 leps_gas_library = {
@@ -33,10 +33,8 @@ def calculate_kpis(inputs):
     dc_aux = inputs.get("dc_aux", 0.05)
     use_chp = inputs.get("use_chp", True)
     
-    # CHP Logic (Thermodynamics)
     if use_chp:
-        # Simplified Thermal Recovery Estimate
-        p_cooling_elec = p_it * 0.03 # Absorption pumps
+        p_cooling_elec = p_it * 0.03 
         p_net = p_it * (1 + dc_aux) + p_cooling_elec
         pue = p_net / p_it
     else:
@@ -58,12 +56,12 @@ def calculate_kpis(inputs):
         
     unit_site_cap = spec['iso_mw'] * derate
     
-    # --- C. Fleet Sizing & Gen Reliability ---
+    # --- C. Fleet Sizing & Reliability ---
     target_lf = 0.95 if inputs.get("use_bess", True) else 0.90
     n_run = math.ceil(p_gross / (unit_site_cap * target_lf))
     n_maint = math.ceil(n_run * inputs.get("maint_outage_pct", 0.05))
     
-    # Generator Probability Loop
+    # Gen Reliability Loop
     prob_gen_unit = 1.0 - inputs.get("forced_outage_pct", 0.02)
     target_av = inputs.get("avail_req", 99.99) / 100.0
     
@@ -87,41 +85,35 @@ def calculate_kpis(inputs):
     n_total = n_run + n_maint + n_reserve
     installed_mw = n_total * unit_site_cap
     
-    # --- D. BESS Logic (Sizing + Reliability) ---
+    # --- D. BESS Sizing ---
     capex_bess = 0
     mw_bess_req = 0
-    prob_bess_sys = 1.0 # Default if no BESS
+    prob_bess_sys = 1.0
     bess_desc = "None"
     
     if inputs.get("use_bess", True):
-        # 1. Sizing based on Step Load
         step_mw_req = p_it * (inputs.get("step_load_req", 40.0)/100)
-        # Unit cap check vs Step Req
         mw_bess_req = max(step_mw_req, unit_site_cap) 
-        
-        # 2. Redundancy & Reliability
         n_bess_red = inputs.get("n_bess_red", 0)
         mw_bess_total = mw_bess_req * (1 + n_bess_red)
-        mwh_bess_total = mw_bess_total * 2 # 2hr duration default
+        mwh_bess_total = mw_bess_total * 2 
         
-        # BESS Reliability Calc
         bess_fail_rate = inputs.get("bess_maint_pct", 0.01) + inputs.get("bess_for_pct", 0.005)
-        prob_bess_unit = 1.0 - bess_fail_rate
-        # Series reliability: Unit must work. If N+1, prob increases.
-        # Simplified: 1 - (fail_rate ^ (red+1))
         prob_bess_sys = 1.0 - (bess_fail_rate ** (1 + n_bess_red))
         
         capex_bess = (mw_bess_total * 1000 * inputs.get("cost_bess_inv", 120)) + (mwh_bess_total * 1000 * inputs.get("cost_bess_kwh", 280))
-        bess_desc = f"{mw_bess_total:.1f} MW / {mwh_bess_total:.1f} MWh (N+{n_bess_red})"
+        bess_desc = f"{mw_bess_total:.1f} MW / {mwh_bess_total:.1f} MWh"
 
-    # Total System Reliability
     sys_reliability = prob_gen_sys * prob_bess_sys
 
-    # --- E. Logistics & Emissions ---
+    # --- E. CAPEX & LOGISTICS ---
+    # 1. Base Gen CAPEX (FIXED: Defined here first!)
+    capex_gen = n_total * 1000 * inputs.get("cost_kw", spec['cost_kw'])
+    capex_inst = n_total * 1000 * inputs.get("inst_kw", spec['inst_kw'])
+    
+    # 2. Logistics (LNG/Pipeline)
     capex_log = 0
     fuel_mmbtu_hr = p_gross * (spec['hr']/1000)
-    
-    # LNG Logic
     if inputs.get("has_lng", True):
         vol_day = (fuel_mmbtu_hr * 24) * 12.5 
         n_tanks = math.ceil((vol_day * inputs.get("lng_days", 5)) / inputs.get("tank_size", 10000))
@@ -130,7 +122,7 @@ def calculate_kpis(inputs):
     if not inputs.get("is_lng_primary", False):
         capex_log += (inputs.get("dist_pipe", 1000) * 200) 
         
-    # Emissions & Urea Logic
+    # 3. Emissions
     capex_emis = 0
     total_bhp = p_gross * 1341
     nox_tpy = (spec['nox'] * total_bhp * 8760) / 907185
@@ -140,12 +132,12 @@ def calculate_kpis(inputs):
     urea_vol_yr = 0
     if req_scr:
         capex_emis += installed_mw * 1000 * inputs.get("cost_scr", 60.0)
-        urea_vol_yr = p_gross * 1.5 * 8760 # Liters approx
+        urea_vol_yr = p_gross * 1.5 * 8760 
     
     if inputs.get("force_oxicat", False):
         capex_emis += installed_mw * 1000 * inputs.get("cost_oxicat", 15.0)
         
-    # Tri-Gen CAPEX
+    # 4. Tri-Gen (Now safely uses capex_gen)
     capex_chp = 0
     if use_chp:
         capex_chp = capex_gen * inputs.get("chp_cost_factor", 0.20)
@@ -156,23 +148,20 @@ def calculate_kpis(inputs):
     gas_price = inputs.get("gas_price", 6.5)
     if inputs.get("is_lng_primary", False): gas_price += inputs.get("vp_premium", 4.0)
     
-    # Heat Rate Adjustment
     lf_real = p_gross / (n_run * unit_site_cap)
     eff_factor = 1.0 if lf_real > 0.75 else (0.85 + (0.6*(lf_real-0.5)))
     hr_site = spec['hr'] / max(0.5, eff_factor)
     
     fuel_cost_yr = p_gross * (hr_site/1000) * gas_price * 8760
     om_cost_yr = p_net * 8760 * inputs.get("om_var", 12.0)
-    if inputs.get("use_bess", True): om_cost_yr += (mw_bess_total * 1000 * inputs.get("bess_om", 10.0))
+    if inputs.get("use_bess", True): om_cost_yr += (mw_bess_req * 1000 * inputs.get("bess_om", 10.0))
     
     wacc = inputs.get("wacc", 0.08)
     years = inputs.get("years", 20)
     crf = (wacc * (1 + wacc)**years) / ((1 + wacc)**years - 1)
     
-    # Repowering Annuity
     repower_ann = 0
     if inputs.get("use_bess", True):
-        # 10 year replacement
         repower_val = (mwh_bess_total * 1000 * inputs.get("cost_bess_kwh", 280)) / 1e6
         repower_ann = (repower_val / ((1+wacc)**10)) * 1e6 * crf 
     
@@ -181,14 +170,12 @@ def calculate_kpis(inputs):
     
     lcoe = total_ann_cost / (p_net * 8760 * 1000)
     
-    # Noise Logic
     dist_m = inputs.get("dist_neighbor", 100.0)
     attenuation = 20 * math.log10(dist_m) + 8
     total_source = inputs.get("source_noise_dba", 85.0) + (10 * math.log10(n_run))
     noise_at_neighbor = total_source - attenuation
     noise_excess = max(0, noise_at_neighbor - inputs.get("noise_limit", 70.0))
     
-    # Pack Results
     res = {
         "model": model_key,
         "n_total": n_total,
@@ -237,12 +224,12 @@ defaults = {
     "cost_scr": 60.0, "cost_oxicat": 15.0, "force_oxicat": False, "urea_days": 7,
     
     # Econ
-    "cost_kw": 575.0, "inst_kw": 650.0,
+    "cost_kw": 575.0, "inst_kw": 650.0, "tank_cost": 50000.0,
+    "cost_bess_kwh": 280.0, "cost_bess_inv": 120.0, "bess_om": 10.0,
     "gas_price": 6.5, "vp_premium": 4.0, "om_var": 12.0, "grid_price": 0.15,
     "wacc": 0.08, "years": 20, "target_lcoe": 0.11
 }
 
-# Auto-Heal Logic
 if 'project' not in st.session_state:
     st.session_state['project'] = {
         "name": "Project Alpha",
@@ -251,7 +238,6 @@ if 'project' not in st.session_state:
     }
     st.session_state['active_scenario'] = "Base Case"
 else:
-    # Ensure current scenario has all new default keys
     curr_scen = st.session_state['project']['scenarios'][st.session_state['active_scenario']]
     for k, v in defaults.items():
         if k not in curr_scen:
@@ -266,11 +252,11 @@ def set_val(key, value):
     st.session_state['project']['scenarios'][scen][key] = value
 
 # ==============================================================================
-# 3. MAIN UI
+# 3. SIDEBAR
 # ==============================================================================
 
 with st.sidebar:
-    st.title("CAT Architect v4.1")
+    st.title("CAT Architect v4.2")
     with st.expander("💾 Database (JSON)", expanded=False):
         proj_data = json.dumps(st.session_state['project'], indent=2)
         st.download_button("Download Project", proj_data, f"{st.session_state['project']['name']}.json", "application/json")
@@ -294,7 +280,10 @@ with st.sidebar:
             st.session_state['project']['scenarios'][new_scen] = st.session_state['project']['scenarios'][active].copy()
             st.rerun()
 
-# --- MAIN AREA ---
+# ==============================================================================
+# 4. MAIN EDITOR
+# ==============================================================================
+
 tab_edit, tab_comp, tab_rep = st.tabs(["📝 Scenario Editor", "📊 Comparative Analysis", "📑 Report"])
 
 with tab_edit:
@@ -590,4 +579,4 @@ with tab_rep:
 
 # --- FOOTER ---
 st.markdown("---")
-st.caption("CAT Architect v4.1 | Full Inputs & Reliability Physics")
+st.caption("CAT Power Architect v4.2 | Hotfix for CAPEX Variable Order")
