@@ -3,14 +3,30 @@ import pandas as pd
 import numpy as np
 import math
 import plotly.express as px
+import plotly.graph_objects as go
 import json
 import time
 
 # --- PAGE CONFIGURATION ---
-st.set_page_config(page_title="CAT Architect v4.7", page_icon="🏗️", layout="wide")
+st.set_page_config(page_title="CAT Architect v4.8", page_icon="🏗️", layout="wide")
+
+# --- CSS FOR PRINTING ---
+st.markdown("""
+<style>
+@media print {
+    [data-testid="stSidebar"] { display: none; }
+    [data-testid="stHeader"] { display: none; }
+    .stApp > header { display: none; }
+    #MainMenu { display: none; }
+    footer { display: none; }
+    .stButton { display: none; }
+    .block-container { padding-top: 0 !important; }
+}
+</style>
+""", unsafe_allow_html=True)
 
 # ==============================================================================
-# 1. THE DATA & PHYSICS ENGINE (UNCHANGED)
+# 1. THE DATA & PHYSICS ENGINE
 # ==============================================================================
 
 leps_gas_library = {
@@ -176,14 +192,15 @@ def calculate_kpis(inputs):
     res = {
         "model": model_key, "n_total": n_total, "n_reserve": n_reserve, "n_bess_red": n_bess_red,
         "p_net": p_net, "pue": pue, "total_capex": total_capex, "lcoe": lcoe,
-        "fuel_cost": fuel_cost_yr, "hr_net_btu": (fuel_mmbtu_hr * 1e6) / (p_net * 1000),
+        "fuel_cost": fuel_cost_yr, "om_cost": om_cost_yr, "capex_ann": capex_ann,
+        "hr_net_btu": (fuel_mmbtu_hr * 1e6) / (p_net * 1000),
         "sys_reliability": sys_reliability, "bess_desc": bess_desc,
         "noise_val": noise_at_neighbor, "noise_limit": inputs.get("noise_limit", 70.0), "noise_excess": noise_excess
     }
     return res
 
 # ==============================================================================
-# 2. STATE MANAGEMENT & SCENARIO LOGIC
+# 2. STATE & SCENARIO LOGIC
 # ==============================================================================
 
 defaults = {
@@ -209,7 +226,7 @@ defaults = {
 if 'project' not in st.session_state:
     st.session_state['project'] = {
         "name": "Project Alpha",
-        "created_at": str(pd.Timestamp.now()),
+        "created_at": str(pd.Timestamp.now().strftime("%Y-%m-%d")),
         "scenarios": { "Base Case": defaults.copy() }
     }
     st.session_state['active_scenario'] = "Base Case"
@@ -228,7 +245,6 @@ def create_next_scenario():
     while f"Scenario {i}" in st.session_state['project']['scenarios']:
         i += 1
     new_name = f"Scenario {i}"
-    # Clone current active logic
     curr = st.session_state['active_scenario']
     st.session_state['project']['scenarios'][new_name] = st.session_state['project']['scenarios'][curr].copy()
     st.session_state['active_scenario'] = new_name
@@ -245,15 +261,13 @@ def rename_scenario(old_name, new_name):
             st.warning("Name exists!")
 
 # ==============================================================================
-# 3. SIDEBAR (PROJECT MANAGER)
+# 3. SIDEBAR
 # ==============================================================================
 
 with st.sidebar:
-    st.title("CAT Architect v4.7")
+    st.title("CAT Architect v4.8")
     
     st.markdown("### 📂 Project Files")
-    
-    # LOAD
     uploaded_file = st.file_uploader("Load Project", type=["json"], label_visibility="collapsed")
     if uploaded_file:
         data = json.load(uploaded_file)
@@ -263,11 +277,9 @@ with st.sidebar:
         time.sleep(1)
         st.rerun()
 
-    # SAVE (Direct Download)
     proj_json = json.dumps(st.session_state['project'], indent=2)
     st.download_button("💾 Save Project", proj_json, f"{st.session_state['project']['name']}.json", "application/json", use_container_width=True)
     
-    # SAVE AS
     with st.expander("Save As..."):
         new_proj_name = st.text_input("New Filename", value=st.session_state['project']['name'])
         if st.button("Update Name"):
@@ -276,19 +288,13 @@ with st.sidebar:
         st.download_button("Download Copy", proj_json, f"{new_proj_name}.json", "application/json")
 
     st.divider()
-    
-    # SCENARIO MANAGER
     st.markdown("### 🎛️ Scenarios")
-    
-    # Auto-Increment Create
     if st.button("➕ Create Scenario", use_container_width=True):
         new_name = create_next_scenario()
         st.success(f"Created {new_name}")
         st.rerun()
         
-    # Selector
     scenarios = list(st.session_state['project']['scenarios'].keys())
-    # Fail-safe index
     try:
         idx = scenarios.index(st.session_state['active_scenario'])
     except:
@@ -304,11 +310,12 @@ with st.sidebar:
 
 tab_edit, tab_comp, tab_rep = st.tabs(["📝 Scenario Editor", "📊 Comparative Analysis", "📑 Report"])
 
+# ... (Previous Editor & Comparator Code remains identical to v4.7) ...
+# RE-INJECTING TABS 1 & 2 FOR COMPLETENESS
+
 with tab_edit:
     c_title, c_rename = st.columns([2, 1])
     c_title.subheader(f"Editing: {st.session_state['active_scenario']}")
-    
-    # SCENARIO RENAMING
     with c_rename:
         new_name_input = st.text_input("Rename Scenario", value=st.session_state['active_scenario'], label_visibility="collapsed")
         if new_name_input != st.session_state['active_scenario']:
@@ -569,7 +576,6 @@ with tab_edit:
     if res['noise_excess'] > 0:
         st.error(f"🔊 Noise Violation: {res['noise_val']:.1f} dBA > Limit {res['noise_limit']} dBA. Requires mitigation.")
 
-# --- TAB 2: COMPARATOR ---
 with tab_comp:
     st.header("Comparison")
     if len(st.session_state['project']['scenarios']) > 0:
@@ -584,7 +590,6 @@ with tab_comp:
             r['Net Heat Rate'] = r['hr_net_btu'] if is_imp_loc else (r['hr_net_btu'] * 0.001055)
             r['HR Unit'] = "Btu/kWh" if is_imp_loc else "MJ/kWh"
             r['Availability (%)'] = r['sys_reliability'] * 100
-            
             r['LCOE ($/kWh)'] = r['lcoe']
             r['CAPEX (M USD)'] = r['total_capex']
             r['Fuel Cost ($/yr)'] = r['fuel_cost']
@@ -613,13 +618,76 @@ with tab_comp:
         c2.plotly_chart(px.bar(df, x=df.index, y='CAPEX (M USD)', text_auto='.1f', title="CAPEX Comparison", color_discrete_sequence=['#EF553B']), use_container_width=True)
         c3.plotly_chart(px.bar(df, x=df.index, y='Fuel Cost ($/yr)', text_auto='.0s', title="Annual Fuel Cost Comparison", color_discrete_sequence=['#00CC96']), use_container_width=True)
 
-# --- TAB 3: REPORT ---
+# --- TAB 3: REPORT GENERATOR ---
 with tab_rep:
-    st.header("Executive Report")
+    st.title("📄 Executive Proposal")
+    
+    # Identify Best Scenario
     best_scen = df['LCOE ($/kWh)'].idxmin()
-    st.success(f"Best Scenario: **{best_scen}** (${df.loc[best_scen, 'LCOE ($/kWh)']:.4f}/kWh)")
-    st.json(st.session_state['project']['scenarios'][best_scen])
+    best_data = df.loc[best_scen]
+    
+    st.markdown(f"""
+    ## **{st.session_state['project']['name']}**
+    **Date:** {st.session_state['project']['created_at']}  
+    **Recommended Strategy:** {best_scen}
+    ---
+    """)
+    
+    # 1. Executive Summary
+    st.subheader("1. Executive Summary")
+    col1, col2, col3 = st.columns(3)
+    col1.metric("LCOE", f"${best_data['LCOE ($/kWh)']:.4f}/kWh", "Target: $0.1100")
+    col2.metric("Total CAPEX", f"${best_data['CAPEX (M USD)']:.1f} M")
+    col3.metric("Annual Fuel Cost", f"${best_data['Fuel Cost ($/yr)']:,.0f} / yr")
+    
+    # 2. Technical Configuration
+    st.subheader("2. Technical Solution")
+    t1, t2 = st.columns(2)
+    with t1:
+        st.markdown(f"""
+        * **Generator Model:** {best_data['Generator Model']}
+        * **Total Units:** {best_data['Total Units']} (Active + Reserve + Maint)
+        * **Net Capacity:** {res['p_net']:.1f} MW
+        * **Heat Rate:** {best_data['Net Heat Rate']:.0f} {best_data['HR Unit']}
+        """)
+    with t2:
+        st.markdown(f"""
+        * **Availability:** {best_data['Availability (%)']:.4f}%
+        * **BESS Config:** {res['bess_desc']}
+        * **Cooling:** {'Tri-Gen (Absorption)' if inputs.get('use_chp') else 'Electric'}
+        * **PUE:** {res['pue']:.3f}
+        """)
+        
+    # 3. Financial Breakdown
+    st.subheader("3. Cost Structure (LCOE Breakdown)")
+    
+    # Donut Chart for Cost Components
+    fuel_share = best_data['Fuel Cost ($/yr)']
+    capex_share = res['capex_ann']
+    om_share = res['om_cost']
+    
+    labels = ['Fuel', 'CAPEX Amortization', 'O&M']
+    values = [fuel_share, capex_share, om_share]
+    
+    fig_donut = go.Figure(data=[go.Pie(labels=labels, values=values, hole=.4)])
+    fig_donut.update_layout(height=350, margin=dict(t=0, b=0, l=0, r=0))
+    st.plotly_chart(fig_donut, use_container_width=True)
+    
+    # 4. Key Assumptions
+    st.subheader("4. Critical Assumptions")
+    assumptions = {
+        "Load (IT)": f"{inputs.get('p_it')} MW",
+        "Gas Price": f"${inputs.get('gas_price')} / MMBtu",
+        "WACC": f"{inputs.get('wacc')*100:.1f}%",
+        "Term": f"{inputs.get('years')} Years"
+    }
+    st.table(pd.DataFrame(assumptions.items(), columns=["Parameter", "Value"]))
+    
+    st.markdown("---")
+    st.caption("Generated by CAT Power Architect v4.8")
+    
+    st.info("💡 **Tip:** Press `Ctrl + P` (or Cmd + P) to print this report as PDF. The sidebar will be automatically hidden.")
 
 # --- FOOTER ---
 st.markdown("---")
-st.caption("CAT Architect v4.7 | Scenario Management")
+st.caption("CAT Power Master Architect | v4.8 | Professional Reporting")
