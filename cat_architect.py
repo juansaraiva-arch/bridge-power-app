@@ -1,4 +1,5 @@
 import streamlit as st
+import streamlit.components.v1 as components
 import pandas as pd
 import numpy as np
 import math
@@ -8,49 +9,43 @@ import json
 import time
 
 # --- PAGE CONFIGURATION ---
-st.set_page_config(page_title="CAT Architect v4.9", page_icon="🏗️", layout="wide")
+st.set_page_config(page_title="CAT Architect v4.10", page_icon="🏗️", layout="wide")
 
-# --- CSS FOR PRINTING & REPORT LAYOUT ---
+# --- CSS FOR REPORT FORMATTING ---
 st.markdown("""
 <style>
     @media print {
-        /* Hide UI elements */
-        [data-testid="stSidebar"] { display: none !important; }
-        [data-testid="stHeader"] { display: none !important; }
-        .stApp > header { display: none !important; }
-        #MainMenu { display: none !important; }
-        footer { display: none !important; }
-        .stButton { display: none !important; }
-        .stDeployButton { display: none !important; }
+        /* Hide UI elements during print */
+        [data-testid="stSidebar"], [data-testid="stHeader"], .stApp > header, 
+        footer, .stButton, .stDeployButton, [data-testid="stToolbar"] { 
+            display: none !important; 
+        }
         
-        /* Layout adjustments for print */
-        .block-container { padding-top: 0 !important; padding-left: 1rem !important; padding-right: 1rem !important; }
+        /* Layout adjustments */
+        .block-container { 
+            padding-top: 0 !important; 
+            padding-left: 0.5rem !important; 
+            padding-right: 0.5rem !important; 
+            max-width: 100% !important;
+        }
         
         /* Force Page Break */
-        .page-break { page-break-before: always !important; display: block !important; }
+        .page-break { 
+            page-break-before: always !important; 
+            break-before: always !important;
+            display: block !important; 
+            height: 0px !important;
+            visibility: hidden;
+        }
+        
+        /* Ensure charts print */
+        .js-plotly-plot { margin-bottom: 20px !important; }
     }
-    
-    /* Custom Print Button Style */
-    .print-btn {
-        background-color: #FFCD11; /* Caterpillar Yellow */
-        color: black;
-        padding: 10px 20px;
-        text-align: center;
-        text-decoration: none;
-        display: inline-block;
-        font-size: 16px;
-        margin: 4px 2px;
-        cursor: pointer;
-        border-radius: 4px;
-        border: none;
-        font-weight: bold;
-    }
-    .print-btn:hover { background-color: #e6b800; }
 </style>
 """, unsafe_allow_html=True)
 
 # ==============================================================================
-# 1. THE DATA & PHYSICS ENGINE
+# 1. PHYSICS ENGINE (UNCHANGED)
 # ==============================================================================
 
 leps_gas_library = {
@@ -95,7 +90,7 @@ def calculate_kpis(inputs):
         
     unit_site_cap = spec['iso_mw'] * derate
     
-    # Fleet
+    # Fleet Sizing
     target_lf = 0.95 if inputs.get("use_bess", True) else 0.90
     n_run = math.ceil(p_gross / (unit_site_cap * target_lf))
     n_maint = math.ceil(n_run * inputs.get("maint_outage_pct", 0.05))
@@ -105,12 +100,14 @@ def calculate_kpis(inputs):
     
     n_reserve = 0
     prob_gen_sys = 0.0
+    
     for r in range(0, 20):
         n_pool = n_run + r
         p_accum = 0.0
         for k in range(n_run, n_pool + 1):
             comb = math.comb(n_pool, k)
             p_accum += comb * (prob_unit_ok ** k) * ((1 - prob_unit_ok) ** (n_pool - k))
+        
         if p_accum >= target_av:
             n_reserve = r
             prob_gen_sys = p_accum
@@ -228,7 +225,7 @@ def calculate_kpis(inputs):
 defaults = {
     # Metadata
     "client": "Client Name", "location": "Site Location", "quote_ref": "QT-001",
-    "contact_name": "John Doe", "contact_email": "email@client.com", "contact_phone": "+1 555 0000",
+    "contact_name": "Contact Name", "contact_email": "email@client.com", "contact_phone": "+1 555 0000",
     "prepared_by": "Sales Engineer",
     
     # Global
@@ -236,8 +233,7 @@ defaults = {
     "site_temp": 35, "site_alt": 100, "mn": 80, "reg_zone": "LatAm / No-Reg",
     "dist_neighbor": 100.0, "noise_limit": 70.0, "source_noise_dba": 85.0,
     # Load
-    "dc_type": "AI Factory", "p_it": 100.0, "dc_aux": 0.05, "avail_req": 99.99, 
-    "step_load_req": 40.0, "volt_kv": 13.8,
+    "dc_type": "AI Factory", "p_it": 100.0, "dc_aux": 0.05, "avail_req": 99.99, "step_load_req": 40.0, "volt_kv": 13.8,
     # Tech
     "model": "G3520K", "gen_parasitic": 0.025, "maint_outage_pct": 0.05, "forced_outage_pct": 0.02,
     "use_bess": True, "bess_maint_pct": 0.01, "bess_for_pct": 0.005, "cost_bess_kwh": 280.0, "cost_bess_inv": 120.0, "bess_om": 10.0,
@@ -253,7 +249,7 @@ defaults = {
 # --- INIT STATE ---
 if 'project' not in st.session_state:
     st.session_state['project'] = {
-        "name": "Project Alpha",
+        "name": "New Project", # FIXED: Removed "Project Alpha"
         "created_at": str(pd.Timestamp.now().strftime("%Y-%m-%d")),
         "scenarios": { "Base Case": defaults.copy() }
     }
@@ -293,14 +289,14 @@ def rename_scenario(old_name, new_name):
 # ==============================================================================
 
 with st.sidebar:
-    st.title("CAT Architect v4.9")
+    st.title("CAT Architect v4.10")
     
     st.markdown("### 📂 Project Details")
     # Project Metadata
     c_proj1, c_proj2 = st.columns(2)
     st.session_state['project']['client'] = st.text_input("Client", st.session_state['project'].get('client', 'Client Name'))
     st.session_state['project']['location'] = st.text_input("Location", st.session_state['project'].get('location', 'Site Location'))
-    st.session_state['project']['quote_ref'] = st.text_input("Quote Ref", st.session_state['project'].get('quote_ref', 'QT-001'))
+    st.session_state['project']['quote_ref'] = st.text_input("Ref/Quote", st.session_state['project'].get('quote_ref', 'QT-001'))
     st.session_state['project']['prepared_by'] = st.text_input("Prepared By", st.session_state['project'].get('prepared_by', 'Engineer'))
     
     with st.expander("👤 Contact Info"):
@@ -323,6 +319,13 @@ with st.sidebar:
     proj_json = json.dumps(st.session_state['project'], indent=2)
     st.download_button("💾 Save Project", proj_json, f"{st.session_state['project']['name']}.json", "application/json", use_container_width=True)
     
+    with st.expander("Save As..."):
+        new_proj_name = st.text_input("New Filename", value=st.session_state['project']['name'])
+        if st.button("Update Name"):
+            st.session_state['project']['name'] = new_proj_name
+            st.rerun()
+        st.download_button("Download Copy", proj_json, f"{new_proj_name}.json", "application/json")
+
     st.divider()
     
     # SCENARIO MANAGER
@@ -343,12 +346,11 @@ with st.sidebar:
     st.session_state['active_scenario'] = active
 
 # ==============================================================================
-# 4. MAIN EDITOR (UNCHANGED LOGIC - HIDING FOR BREVITY TO FOCUS ON REPORT)
+# 4. MAIN EDITOR (UNCHANGED LOGIC)
 # ==============================================================================
 
 tab_edit, tab_comp, tab_rep = st.tabs(["📝 Scenario Editor", "📊 Comparative Analysis", "📑 Report"])
 
-# ... (Insert previous Editor & Comparator Code here - Identical to v4.7/v4.8) ...
 with tab_edit:
     c_title, c_rename = st.columns([2, 1])
     c_title.subheader(f"Editing: {st.session_state['active_scenario']}")
@@ -704,7 +706,7 @@ with tab_rep:
         * **Generator Model:** {best_data['Generator Model']}
         * **Fleet Config:** {best_data['Total Units']} units (N+{best_kpis['n_reserve']})
         * **Availability:** {best_data['Availability (%)']:.4f}%
-        * **Cooling:** {'Tri-Gen (Absorption)' if best_inputs.get('use_chp') else 'Electric Chillers'}
+        * **Cooling:** {'Tri-Gen (Absorption)' if best_inputs.get('use_chp') else 'Electric'}
         """)
     with t2:
         st.markdown(f"""
@@ -721,16 +723,19 @@ with tab_rep:
     fig_donut.update_layout(height=300, margin=dict(t=0, b=0, l=0, r=0))
     st.plotly_chart(fig_donut, use_container_width=True)
 
-    # --- PRINT BUTTON (Top of page usually better, but here for flow) ---
-    st.markdown('<button class="print-btn" onclick="window.print()">🖨️ Print Executive Report to PDF</button>', unsafe_allow_html=True)
+    # --- PRINT BUTTON ---
+    # Using iframe hack for reliable printing
+    st.markdown("""
+        <button class="print-btn" onclick="window.parent.print()">
+            🖨️ Print Executive Report to PDF
+        </button>
+    """, unsafe_allow_html=True)
 
-    # --- PAGE BREAK FOR COMPARISON ---
+    # --- PAGE BREAK ---
     st.markdown('<div class="page-break"></div>', unsafe_allow_html=True)
 
-    # --- PAGE 2: COMPARATIVE ANALYSIS ---
+    # --- PAGE 2: COMPARISON ---
     st.markdown("## 📊 Scenario Comparison Matrix")
-    
-    # Static Table for Print
     st.table(df[cols_show].style.format({
         'LCOE ($/kWh)': '${:.4f}', 
         'CAPEX (M USD)': '${:,.1f}', 
@@ -741,8 +746,6 @@ with tab_rep:
     
     st.markdown("### Comparative Charts")
     c_p1, c_p2 = st.columns(2)
-    
-    # Re-creating charts with static config for print stability
     fig_print_1 = px.bar(df, x=df.index, y='LCOE ($/kWh)', color='Generator Model', text_auto='.4f', title="LCOE ($/kWh)")
     fig_print_1.update_layout(height=400)
     c_p1.plotly_chart(fig_print_1, use_container_width=True)
@@ -753,4 +756,4 @@ with tab_rep:
 
 # --- FOOTER ---
 st.markdown("---")
-st.caption(f"Prepared by: {st.session_state['project'].get('prepared_by')} | CAT Architect v4.9")
+st.caption(f"Prepared by: {st.session_state['project'].get('prepared_by')} | CAT Architect v4.10")
