@@ -6,7 +6,7 @@ import plotly.express as px
 import plotly.graph_objects as go
 
 # --- PAGE CONFIGURATION ---
-st.set_page_config(page_title="CAT Primary Power Solutions v62", page_icon="⚡", layout="wide")
+st.set_page_config(page_title="CAT Primary Power Solutions v63", page_icon="⚡", layout="wide")
 
 # ==============================================================================
 # 0. HYBRID DATA LIBRARY
@@ -171,6 +171,7 @@ with st.sidebar:
     def_use_bess = True if is_ai else False
     
     p_it = st.number_input("Critical IT Load (MW)", 1.0, 1000.0, 100.0, step=10.0)
+    # MOVED DC AUX HERE
     dc_aux_pct = st.number_input("DC Aux (%)", 0.0, 20.0, 5.0) / 100.0
     
     avail_req = st.number_input("Required Availability (%)", 90.0, 99.99999, 99.99, format="%.5f")
@@ -263,6 +264,7 @@ with st.sidebar:
         hr_btu = hr_user / hr_conv_factor
         final_elec_eff = 3412.14 / hr_btu
 
+    # MOVED LOSSES & PARASITICS HERE
     c_aux1, c_aux2 = st.columns(2)
     dist_loss_pct = c_aux1.number_input("Dist Loss (%)", 0.0, 10.0, 1.0) / 100.0
     gen_parasitic_pct = c_aux2.number_input("Parasitics (%)", 0.0, 10.0, 2.5) / 100.0
@@ -614,8 +616,12 @@ if enable_optimizer and max_area_input > 0:
     area_utilization_pct = min(100.0, (total_area_m2 / max_area_limit_m2) * 100)
     is_area_exceeded = total_area_m2 > max_area_limit_m2
     
+    # Calculate Savings Scenarios
+    # Scenario A: No LNG (Only if LNG is present)
     savings_lng = storage_area_m2 * 1.2 
+    # Scenario B: No CHP
     savings_chp = (area_chp - (p_net_req * 10)) * 1.2 
+    # Scenario C: Turbines (Approx 40% of RICE Gen Area)
     savings_turb = (area_gen * 0.60) * 1.2 
 
 # --- J. FINANCIALS & NPV ---
@@ -895,9 +901,10 @@ with t4:
     # LCOE OPTIMIZER LOGIC (v62: UI & Logic Fixes)
     if enable_lcoe_target and target_lcoe > 0:
         if lcoe > target_lcoe:
-            st.error(f"⚠️ **Target Missed:** Current LCOE **${lcoe:.4f}/kWh** > Target **${target_lcoe:.4f}/kWh**")
+            st.error(f"⚠️ **Target Missed:** Current LCOE (${lcoe:.4f}/kWh) > Target (${target_lcoe:.4f}/kWh)")
             st.markdown("### 📉 Cost Reduction Solver")
             
+            # Expanded to 4 columns for horizontal layout
             c_sol1, c_sol2, c_sol3, c_sol4 = st.columns(4)
             
             # Sim 1: Reduce Reserve
@@ -960,7 +967,7 @@ with t4:
                 c_sol4.caption("Risk: Higher PUE, Electric Cooling.")
 
         else:
-            st.success(f"🎉 **Target Met:** Current LCOE **${lcoe:.4f}/kWh** is below Target **${target_lcoe:.4f}/kWh**.")
+            st.success(f"🎉 **Target Met:** Current LCOE (${lcoe:.4f}/kWh) is below Target (${target_lcoe:.4f}/kWh).")
 
     # 1. Cost Index Editor
     st.info(f"**Inst. Ratio Auto-Calc:** Installation Cost (${gen_install_cost:.0f}/kW) vs Equipment Cost (${gen_unit_cost:.0f}/kW)")
