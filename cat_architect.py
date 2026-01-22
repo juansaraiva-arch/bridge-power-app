@@ -8,20 +8,44 @@ import json
 import time
 
 # --- PAGE CONFIGURATION ---
-st.set_page_config(page_title="CAT Architect v4.8", page_icon="🏗️", layout="wide")
+st.set_page_config(page_title="CAT Architect v4.9", page_icon="🏗️", layout="wide")
 
-# --- CSS FOR PRINTING ---
+# --- CSS FOR PRINTING & REPORT LAYOUT ---
 st.markdown("""
 <style>
-@media print {
-    [data-testid="stSidebar"] { display: none; }
-    [data-testid="stHeader"] { display: none; }
-    .stApp > header { display: none; }
-    #MainMenu { display: none; }
-    footer { display: none; }
-    .stButton { display: none; }
-    .block-container { padding-top: 0 !important; }
-}
+    @media print {
+        /* Hide UI elements */
+        [data-testid="stSidebar"] { display: none !important; }
+        [data-testid="stHeader"] { display: none !important; }
+        .stApp > header { display: none !important; }
+        #MainMenu { display: none !important; }
+        footer { display: none !important; }
+        .stButton { display: none !important; }
+        .stDeployButton { display: none !important; }
+        
+        /* Layout adjustments for print */
+        .block-container { padding-top: 0 !important; padding-left: 1rem !important; padding-right: 1rem !important; }
+        
+        /* Force Page Break */
+        .page-break { page-break-before: always !important; display: block !important; }
+    }
+    
+    /* Custom Print Button Style */
+    .print-btn {
+        background-color: #FFCD11; /* Caterpillar Yellow */
+        color: black;
+        padding: 10px 20px;
+        text-align: center;
+        text-decoration: none;
+        display: inline-block;
+        font-size: 16px;
+        margin: 4px 2px;
+        cursor: pointer;
+        border-radius: 4px;
+        border: none;
+        font-weight: bold;
+    }
+    .print-btn:hover { background-color: #e6b800; }
 </style>
 """, unsafe_allow_html=True)
 
@@ -71,7 +95,7 @@ def calculate_kpis(inputs):
         
     unit_site_cap = spec['iso_mw'] * derate
     
-    # Fleet Sizing
+    # Fleet
     target_lf = 0.95 if inputs.get("use_bess", True) else 0.90
     n_run = math.ceil(p_gross / (unit_site_cap * target_lf))
     n_maint = math.ceil(n_run * inputs.get("maint_outage_pct", 0.05))
@@ -81,14 +105,12 @@ def calculate_kpis(inputs):
     
     n_reserve = 0
     prob_gen_sys = 0.0
-    
     for r in range(0, 20):
         n_pool = n_run + r
         p_accum = 0.0
         for k in range(n_run, n_pool + 1):
             comb = math.comb(n_pool, k)
             p_accum += comb * (prob_unit_ok ** k) * ((1 - prob_unit_ok) ** (n_pool - k))
-        
         if p_accum >= target_av:
             n_reserve = r
             prob_gen_sys = p_accum
@@ -200,16 +222,22 @@ def calculate_kpis(inputs):
     return res
 
 # ==============================================================================
-# 2. STATE & SCENARIO LOGIC
+# 2. STATE MANAGEMENT & SCENARIO LOGIC
 # ==============================================================================
 
 defaults = {
+    # Metadata
+    "client": "Client Name", "location": "Site Location", "quote_ref": "QT-001",
+    "contact_name": "John Doe", "contact_email": "email@client.com", "contact_phone": "+1 555 0000",
+    "prepared_by": "Sales Engineer",
+    
     # Global
     "unit_system": "Metric (SI)", "freq": 60, "derate_mode": "Auto-Calculate", "manual_derate": 5.0,
     "site_temp": 35, "site_alt": 100, "mn": 80, "reg_zone": "LatAm / No-Reg",
     "dist_neighbor": 100.0, "noise_limit": 70.0, "source_noise_dba": 85.0,
     # Load
-    "dc_type": "AI Factory", "p_it": 100.0, "dc_aux": 0.05, "avail_req": 99.99, "step_load_req": 40.0, "volt_kv": 13.8,
+    "dc_type": "AI Factory", "p_it": 100.0, "dc_aux": 0.05, "avail_req": 99.99, 
+    "step_load_req": 40.0, "volt_kv": 13.8,
     # Tech
     "model": "G3520K", "gen_parasitic": 0.025, "maint_outage_pct": 0.05, "forced_outage_pct": 0.02,
     "use_bess": True, "bess_maint_pct": 0.01, "bess_for_pct": 0.005, "cost_bess_kwh": 280.0, "cost_bess_inv": 120.0, "bess_om": 10.0,
@@ -261,14 +289,29 @@ def rename_scenario(old_name, new_name):
             st.warning("Name exists!")
 
 # ==============================================================================
-# 3. SIDEBAR
+# 3. SIDEBAR (PROJECT MANAGER)
 # ==============================================================================
 
 with st.sidebar:
-    st.title("CAT Architect v4.8")
+    st.title("CAT Architect v4.9")
     
-    st.markdown("### 📂 Project Files")
-    uploaded_file = st.file_uploader("Load Project", type=["json"], label_visibility="collapsed")
+    st.markdown("### 📂 Project Details")
+    # Project Metadata
+    c_proj1, c_proj2 = st.columns(2)
+    st.session_state['project']['client'] = st.text_input("Client", st.session_state['project'].get('client', 'Client Name'))
+    st.session_state['project']['location'] = st.text_input("Location", st.session_state['project'].get('location', 'Site Location'))
+    st.session_state['project']['quote_ref'] = st.text_input("Quote Ref", st.session_state['project'].get('quote_ref', 'QT-001'))
+    st.session_state['project']['prepared_by'] = st.text_input("Prepared By", st.session_state['project'].get('prepared_by', 'Engineer'))
+    
+    with st.expander("👤 Contact Info"):
+        st.session_state['project']['contact_name'] = st.text_input("Name", st.session_state['project'].get('contact_name', ''))
+        st.session_state['project']['contact_email'] = st.text_input("Email", st.session_state['project'].get('contact_email', ''))
+        st.session_state['project']['contact_phone'] = st.text_input("Phone", st.session_state['project'].get('contact_phone', ''))
+
+    st.divider()
+    
+    # LOAD/SAVE
+    uploaded_file = st.file_uploader("Load Project (.json)", type=["json"], label_visibility="collapsed")
     if uploaded_file:
         data = json.load(uploaded_file)
         st.session_state['project'] = data
@@ -280,14 +323,9 @@ with st.sidebar:
     proj_json = json.dumps(st.session_state['project'], indent=2)
     st.download_button("💾 Save Project", proj_json, f"{st.session_state['project']['name']}.json", "application/json", use_container_width=True)
     
-    with st.expander("Save As..."):
-        new_proj_name = st.text_input("New Filename", value=st.session_state['project']['name'])
-        if st.button("Update Name"):
-            st.session_state['project']['name'] = new_proj_name
-            st.rerun()
-        st.download_button("Download Copy", proj_json, f"{new_proj_name}.json", "application/json")
-
     st.divider()
+    
+    # SCENARIO MANAGER
     st.markdown("### 🎛️ Scenarios")
     if st.button("➕ Create Scenario", use_container_width=True):
         new_name = create_next_scenario()
@@ -305,14 +343,12 @@ with st.sidebar:
     st.session_state['active_scenario'] = active
 
 # ==============================================================================
-# 4. MAIN EDITOR
+# 4. MAIN EDITOR (UNCHANGED LOGIC - HIDING FOR BREVITY TO FOCUS ON REPORT)
 # ==============================================================================
 
 tab_edit, tab_comp, tab_rep = st.tabs(["📝 Scenario Editor", "📊 Comparative Analysis", "📑 Report"])
 
-# ... (Previous Editor & Comparator Code remains identical to v4.7) ...
-# RE-INJECTING TABS 1 & 2 FOR COMPLETENESS
-
+# ... (Insert previous Editor & Comparator Code here - Identical to v4.7/v4.8) ...
 with tab_edit:
     c_title, c_rename = st.columns([2, 1])
     c_title.subheader(f"Editing: {st.session_state['active_scenario']}")
@@ -620,74 +656,101 @@ with tab_comp:
 
 # --- TAB 3: REPORT GENERATOR ---
 with tab_rep:
-    st.title("📄 Executive Proposal")
+    # --- PAGE 1: EXECUTIVE SUMMARY ---
+    st.title("📄 Project Executive Report")
     
-    # Identify Best Scenario
-    best_scen = df['LCOE ($/kWh)'].idxmin()
-    best_data = df.loc[best_scen]
+    # Metadata Grid
+    proj = st.session_state['project']
     
-    st.markdown(f"""
-    ## **{st.session_state['project']['name']}**
-    **Date:** {st.session_state['project']['created_at']}  
-    **Recommended Strategy:** {best_scen}
-    ---
-    """)
-    
-    # 1. Executive Summary
-    st.subheader("1. Executive Summary")
-    col1, col2, col3 = st.columns(3)
-    col1.metric("LCOE", f"${best_data['LCOE ($/kWh)']:.4f}/kWh", "Target: $0.1100")
-    col2.metric("Total CAPEX", f"${best_data['CAPEX (M USD)']:.1f} M")
-    col3.metric("Annual Fuel Cost", f"${best_data['Fuel Cost ($/yr)']:,.0f} / yr")
-    
-    # 2. Technical Configuration
-    st.subheader("2. Technical Solution")
+    with st.container():
+        st.markdown(f"## **{proj['name']}**")
+        
+        # HTML Table for Metadata (Clean Print Look)
+        meta_html = f"""
+        <table style="width:100%; border-collapse: collapse; margin-bottom: 20px;">
+            <tr>
+                <td style="padding: 8px; border: 1px solid #ddd;"><strong>Client:</strong> {proj.get('client','')}</td>
+                <td style="padding: 8px; border: 1px solid #ddd;"><strong>Location:</strong> {proj.get('location','')}</td>
+                <td style="padding: 8px; border: 1px solid #ddd;"><strong>Date:</strong> {proj.get('created_at','')}</td>
+            </tr>
+            <tr>
+                <td style="padding: 8px; border: 1px solid #ddd;"><strong>Contact:</strong> {proj.get('contact_name','')}</td>
+                <td style="padding: 8px; border: 1px solid #ddd;"><strong>Email:</strong> {proj.get('contact_email','')}</td>
+                <td style="padding: 8px; border: 1px solid #ddd;"><strong>Ref:</strong> {proj.get('quote_ref','')}</td>
+            </tr>
+        </table>
+        """
+        st.markdown(meta_html, unsafe_allow_html=True)
+
+    # Best Scenario Logic
+    best_scen_name = df['LCOE ($/kWh)'].idxmin()
+    best_data = df.loc[best_scen_name]
+    best_inputs = defaults.copy()
+    best_inputs.update(st.session_state['project']['scenarios'][best_scen_name])
+    best_kpis = calculate_kpis(best_inputs)
+
+    st.success(f"🏆 **Recommended Strategy:** {best_scen_name}")
+
+    # Top Level Metrics
+    k1, k2, k3 = st.columns(3)
+    k1.metric("Target LCOE", f"${best_data['LCOE ($/kWh)']:.4f}/kWh")
+    k2.metric("Total Project CAPEX", f"${best_data['CAPEX (M USD)']:.1f} M")
+    k3.metric("Annual Fuel Cost", f"${best_data['Fuel Cost ($/yr)']:,.0f}")
+
+    st.markdown("### Technical Configuration")
     t1, t2 = st.columns(2)
     with t1:
         st.markdown(f"""
         * **Generator Model:** {best_data['Generator Model']}
-        * **Total Units:** {best_data['Total Units']} (Active + Reserve + Maint)
-        * **Net Capacity:** {res['p_net']:.1f} MW
-        * **Heat Rate:** {best_data['Net Heat Rate']:.0f} {best_data['HR Unit']}
+        * **Fleet Config:** {best_data['Total Units']} units (N+{best_kpis['n_reserve']})
+        * **Availability:** {best_data['Availability (%)']:.4f}%
+        * **Cooling:** {'Tri-Gen (Absorption)' if best_inputs.get('use_chp') else 'Electric Chillers'}
         """)
     with t2:
         st.markdown(f"""
-        * **Availability:** {best_data['Availability (%)']:.4f}%
-        * **BESS Config:** {res['bess_desc']}
-        * **Cooling:** {'Tri-Gen (Absorption)' if inputs.get('use_chp') else 'Electric'}
-        * **PUE:** {res['pue']:.3f}
+        * **BESS Capacity:** {best_kpis['bess_desc']}
+        * **Net Heat Rate:** {best_data['Net Heat Rate']} {best_data['HR Unit']}
+        * **PUE:** {best_kpis['pue']:.3f}
+        * **LNG Storage:** {best_inputs.get('lng_days')} days autonomy
         """)
-        
-    # 3. Financial Breakdown
-    st.subheader("3. Cost Structure (LCOE Breakdown)")
-    
-    # Donut Chart for Cost Components
-    fuel_share = best_data['Fuel Cost ($/yr)']
-    capex_share = res['capex_ann']
-    om_share = res['om_cost']
-    
+
+    st.markdown("### Financial Breakdown")
     labels = ['Fuel', 'CAPEX Amortization', 'O&M']
-    values = [fuel_share, capex_share, om_share]
-    
+    values = [best_kpis['fuel_cost'], best_kpis['capex_ann'], best_kpis['om_cost']]
     fig_donut = go.Figure(data=[go.Pie(labels=labels, values=values, hole=.4)])
-    fig_donut.update_layout(height=350, margin=dict(t=0, b=0, l=0, r=0))
+    fig_donut.update_layout(height=300, margin=dict(t=0, b=0, l=0, r=0))
     st.plotly_chart(fig_donut, use_container_width=True)
+
+    # --- PRINT BUTTON (Top of page usually better, but here for flow) ---
+    st.markdown('<button class="print-btn" onclick="window.print()">🖨️ Print Executive Report to PDF</button>', unsafe_allow_html=True)
+
+    # --- PAGE BREAK FOR COMPARISON ---
+    st.markdown('<div class="page-break"></div>', unsafe_allow_html=True)
+
+    # --- PAGE 2: COMPARATIVE ANALYSIS ---
+    st.markdown("## 📊 Scenario Comparison Matrix")
     
-    # 4. Key Assumptions
-    st.subheader("4. Critical Assumptions")
-    assumptions = {
-        "Load (IT)": f"{inputs.get('p_it')} MW",
-        "Gas Price": f"${inputs.get('gas_price')} / MMBtu",
-        "WACC": f"{inputs.get('wacc')*100:.1f}%",
-        "Term": f"{inputs.get('years')} Years"
-    }
-    st.table(pd.DataFrame(assumptions.items(), columns=["Parameter", "Value"]))
+    # Static Table for Print
+    st.table(df[cols_show].style.format({
+        'LCOE ($/kWh)': '${:.4f}', 
+        'CAPEX (M USD)': '${:,.1f}', 
+        'Fuel Cost ($/yr)': '${:,.0f}', 
+        'Net Heat Rate': '{:,.2f}',
+        'Availability (%)': '{:.4f}%'
+    }))
     
-    st.markdown("---")
-    st.caption("Generated by CAT Power Architect v4.8")
+    st.markdown("### Comparative Charts")
+    c_p1, c_p2 = st.columns(2)
     
-    st.info("💡 **Tip:** Press `Ctrl + P` (or Cmd + P) to print this report as PDF. The sidebar will be automatically hidden.")
+    # Re-creating charts with static config for print stability
+    fig_print_1 = px.bar(df, x=df.index, y='LCOE ($/kWh)', color='Generator Model', text_auto='.4f', title="LCOE ($/kWh)")
+    fig_print_1.update_layout(height=400)
+    c_p1.plotly_chart(fig_print_1, use_container_width=True)
+    
+    fig_print_2 = px.bar(df, x=df.index, y='CAPEX (M USD)', text_auto='.1f', title="CAPEX (M USD)", color_discrete_sequence=['#EF553B'])
+    fig_print_2.update_layout(height=400)
+    c_p2.plotly_chart(fig_print_2, use_container_width=True)
 
 # --- FOOTER ---
 st.markdown("---")
-st.caption("CAT Power Master Architect | v4.8 | Professional Reporting")
+st.caption(f"Prepared by: {st.session_state['project'].get('prepared_by')} | CAT Architect v4.9")
