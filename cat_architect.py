@@ -8,42 +8,31 @@ import json
 import time
 
 # --- PAGE CONFIGURATION ---
-st.set_page_config(page_title="CAT Architect v5.0", page_icon="🏗️", layout="wide")
+st.set_page_config(page_title="CAT Architect v5.1", page_icon="🏗️", layout="wide")
 
 # --- CSS FOR PRINTING (ROBUST) ---
 st.markdown("""
 <style>
     @media print {
-        /* Ocultar interfaz de Streamlit */
         [data-testid="stSidebar"], [data-testid="stHeader"], .stApp > header, 
         footer, .stButton, .stDeployButton, [data-testid="stToolbar"] { 
             display: none !important; 
         }
-        
-        /* Ajustar márgenes para papel */
         .block-container { 
             padding: 0 !important; 
             max-width: 100% !important;
             margin: 0 !important;
         }
-        
-        /* Forzar Salto de Página */
         .page-break { 
             page-break-before: always !important; 
             display: block !important; 
             height: 50px !important;
             content: " ";
         }
-        
-        /* Ajustar gráficos para impresión */
         .js-plotly-plot { margin-bottom: 20px !important; width: 100% !important; }
-        
-        /* Tipografía de reporte */
         h1, h2, h3 { color: #333 !important; }
         p, li, td { color: #000 !important; font-size: 12pt !important; }
     }
-    
-    /* Botón de Impresión Estilizado */
     .print-btn-container { text-align: center; margin: 20px 0; }
     .print-btn {
         background-color: #FFCD11; 
@@ -61,7 +50,7 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 # ==============================================================================
-# 1. PHYSICS ENGINE (UNCHANGED)
+# 1. PHYSICS ENGINE
 # ==============================================================================
 
 leps_gas_library = {
@@ -233,7 +222,7 @@ def calculate_kpis(inputs):
     return res
 
 # ==============================================================================
-# 2. STATE MANAGEMENT & SCENARIO LOGIC
+# 2. STATE & DEFAULTS
 # ==============================================================================
 
 defaults = {
@@ -255,17 +244,18 @@ defaults = {
     "wacc": 0.08, "years": 20, "target_lcoe": 0.11
 }
 
-# --- STATE MIGRATION LOGIC (Fix "Sigue Igual" Issue) ---
+# --- STATE MIGRATION ---
 if 'project' not in st.session_state:
     st.session_state['project'] = {
         "name": "New Project",
         "created_at": str(pd.Timestamp.now().strftime("%Y-%m-%d")),
-        "client": "", "location": "", "quote_ref": "", "contact_name": "", "contact_email": "", "contact_phone": "",
+        "client": "", "location": "", "quote_ref": "", 
+        "contact_name": "", "contact_email": "", "contact_phone": "", "prepared_by": "",
         "scenarios": { "Base Case": defaults.copy() }
     }
     st.session_state['active_scenario'] = "Base Case"
 else:
-    # FORCE UPDATE META FIELDS IF MISSING (MIGRATION)
+    # Ensure meta fields exist
     if "client" not in st.session_state['project']:
         st.session_state['project'].update({
             "client": "", "location": "", "quote_ref": "", 
@@ -301,18 +291,15 @@ def rename_scenario(old_name, new_name):
             st.warning("Name exists!")
 
 # ==============================================================================
-# 3. SIDEBAR (PROJECT MANAGER)
+# 3. SIDEBAR
 # ==============================================================================
 
 with st.sidebar:
-    st.title("CAT Architect v5.0")
+    st.title("CAT Architect v5.1")
     
     st.markdown("### 📂 Project Data")
-    
-    # METADATA INPUTS (Requested Feature)
     st.session_state['project']['client'] = st.text_input("Client", st.session_state['project']['client'], placeholder="Customer Name")
     st.session_state['project']['location'] = st.text_input("Location", st.session_state['project']['location'], placeholder="Site City/Country")
-    
     c_ref1, c_ref2 = st.columns(2)
     st.session_state['project']['quote_ref'] = c_ref1.text_input("Ref #", st.session_state['project']['quote_ref'], placeholder="QT-123")
     st.session_state['project']['prepared_by'] = c_ref2.text_input("Engineer", st.session_state['project'].get('prepared_by',''), placeholder="Your Name")
@@ -324,11 +311,9 @@ with st.sidebar:
 
     st.divider()
     
-    # FILE OPS
     col_save, col_load = st.columns(2)
     proj_json = json.dumps(st.session_state['project'], indent=2)
     col_save.download_button("💾 Save", proj_json, f"{st.session_state['project']['name']}.json", "application/json")
-    
     uploaded_file = col_load.file_uploader("📂 Load", type=["json"], label_visibility="collapsed")
     if uploaded_file:
         data = json.load(uploaded_file)
@@ -345,8 +330,6 @@ with st.sidebar:
             st.rerun()
 
     st.divider()
-    
-    # SCENARIO OPS
     st.markdown("### 🎛️ Scenarios")
     if st.button("➕ Create Scenario", use_container_width=True):
         new_name = create_next_scenario()
@@ -632,9 +615,8 @@ with tab_edit:
     if res['noise_excess'] > 0:
         st.error(f"🔊 Noise Violation: {res['noise_val']:.1f} dBA > Limit {res['noise_limit']} dBA. Requires mitigation.")
 
-# --- TAB 2: COMPARATOR ---
 with tab_comp:
-    st.header("Scenario Comparison")
+    st.header("Comparison")
     if len(st.session_state['project']['scenarios']) > 0:
         all_res = []
         for name, params in st.session_state['project']['scenarios'].items():
@@ -676,7 +658,7 @@ with tab_comp:
         c2.plotly_chart(px.bar(df, x=df.index, y='CAPEX (M USD)', text_auto='.1f', title="CAPEX Comparison", color_discrete_sequence=['#EF553B']), use_container_width=True)
         c3.plotly_chart(px.bar(df, x=df.index, y='Fuel Cost ($/yr)', text_auto='.0s', title="Annual Fuel Cost Comparison", color_discrete_sequence=['#00CC96']), use_container_width=True)
 
-# --- TAB 3: REPORT GENERATOR ---
+# --- TAB 3: REPORT GENERATOR (FIXED) ---
 with tab_rep:
     # PRINT BUTTON
     st.markdown("""
@@ -758,10 +740,17 @@ with tab_rep:
         'Availability (%)': '{:.4f}%'
     }))
     
+    # RE-CREATE CHARTS FOR REPORT (FIX)
+    fig_print_1 = px.bar(df, x=df.index, y='LCOE ($/kWh)', color='Generator Model', text_auto='.4f', title="LCOE Comparison")
+    fig_print_1.update_layout(height=400)
+    
+    fig_print_2 = px.bar(df, x=df.index, y='CAPEX (M USD)', text_auto='.1f', title="CAPEX Comparison", color_discrete_sequence=['#EF553B'])
+    fig_print_2.update_layout(height=400)
+
     c_p1, c_p2 = st.columns(2)
     c_p1.plotly_chart(fig_print_1, use_container_width=True)
     c_p2.plotly_chart(fig_print_2, use_container_width=True)
 
 # --- FOOTER ---
 st.markdown("---")
-st.caption(f"CAT Architect v5.0 | {proj.get('created_at','')}")
+st.caption(f"Prepared by: {st.session_state['project'].get('prepared_by')} | CAT Architect v5.1")
