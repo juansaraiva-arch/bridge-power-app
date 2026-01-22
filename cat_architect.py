@@ -9,29 +9,58 @@ import json
 import time
 
 # --- PAGE CONFIGURATION ---
-st.set_page_config(page_title="CAT Architect v5.3", page_icon="🏗️", layout="wide")
+st.set_page_config(page_title="CAT Architect v5.4", page_icon="🏗️", layout="wide")
 
-# --- CSS FOR REPORT FORMATTING ---
+# --- CSS FOR REPORT FORMATTING (FIXED MARGINS) ---
 st.markdown("""
 <style>
-    /* Print Layout Rules */
+    /* Estilos de Impresión Profesional */
     @media print {
+        /* Configuración de Página */
+        @page {
+            size: landscape;
+            margin: 1.5cm;
+        }
+        
+        /* Ocultar elementos de UI */
         [data-testid="stSidebar"], [data-testid="stHeader"], .stApp > header, 
         footer, .stButton, .stDeployButton, [data-testid="stToolbar"] { 
             display: none !important; 
         }
+        
+        /* Ajuste del Contenedor Principal */
         .block-container { 
             padding: 0 !important; 
             margin: 0 !important;
             max-width: 100% !important;
+            box-shadow: none !important;
         }
+        
+        /* Texto y Tablas */
+        body {
+            font-family: "Helvetica Neue", Helvetica, Arial, sans-serif;
+            color: black !important;
+            font-size: 10pt;
+        }
+        
+        /* Salto de Página Controlado */
         .page-break { 
             page-break-before: always !important; 
-            display: block !important; 
-            height: 50px !important;
-            content: " ";
+            break-before: always !important;
+            display: block; 
+            height: 0; 
+            visibility: hidden;
+        }
+        
+        /* Asegurar que los gráficos se vean completos */
+        .js-plotly-plot {
+            page-break-inside: avoid;
+            margin-bottom: 20px;
         }
     }
+    
+    /* Botón de Impresión en Pantalla */
+    .print-btn-container { text-align: center; margin-top: 20px; margin-bottom: 20px; }
 </style>
 """, unsafe_allow_html=True)
 
@@ -91,12 +120,14 @@ def calculate_kpis(inputs):
     
     n_reserve = 0
     prob_gen_sys = 0.0
+    
     for r in range(0, 20):
         n_pool = n_run + r
         p_accum = 0.0
         for k in range(n_run, n_pool + 1):
             comb = math.comb(n_pool, k)
             p_accum += comb * (prob_unit_ok ** k) * ((1 - prob_unit_ok) ** (n_pool - k))
+        
         if p_accum >= target_av:
             n_reserve = r
             prob_gen_sys = p_accum
@@ -241,7 +272,7 @@ if 'project' not in st.session_state:
     }
     st.session_state['active_scenario'] = "Base Case"
 else:
-    # State Auto-Heal (Fixes missing fields in older session states)
+    # State Auto-Heal
     if "client" not in st.session_state['project']:
         st.session_state['project'].update({
             "client": "", "location": "", "quote_ref": "", 
@@ -281,7 +312,7 @@ def rename_scenario(old_name, new_name):
 # ==============================================================================
 
 with st.sidebar:
-    st.title("CAT Architect v5.2")
+    st.title("CAT Architect v5.4")
     
     st.markdown("### 📂 Project Data")
     st.session_state['project']['client'] = st.text_input("Client", st.session_state['project']['client'], placeholder="Customer Name")
@@ -336,7 +367,6 @@ with st.sidebar:
 # ==============================================================================
 # 4. DATA CALCULATION FOR ALL SCENARIOS (GLOBAL SCOPE)
 # ==============================================================================
-# Moving this OUT of the tabs so 'df' is available everywhere, solving missing scenario issue.
 
 all_res = []
 for name, params in st.session_state['project']['scenarios'].items():
@@ -628,11 +658,17 @@ with tab_edit:
     hr_val = res['hr_net_btu'] if is_imp else (res['hr_net_btu'] * 0.001055)
     hr_unit = "Btu/kWh" if is_imp else "MJ/kWh"
     
+    # Conditional Formatting for LIVE Metric
+    if is_imp:
+        hr_fmt = f"{hr_val:,.0f}" # 0 decimals for Btu
+    else:
+        hr_fmt = f"{hr_val:,.2f}" # 2 decimals for MJ
+    
     k1, k2, k3, k4, k5 = st.columns(5)
     k1.metric("LCOE", f"${res['lcoe']:.4f}/kWh")
     k2.metric("CAPEX", f"${res['total_capex']:.1f} M")
     k3.metric("Fleet", f"{res['n_total']}x {res['model']}", f"N+{res['n_reserve']}")
-    k4.metric("Net HR", f"{hr_val:,.0f} {hr_unit}")
+    k4.metric("Net HR", f"{hr_fmt} {hr_unit}")
     k5.metric("Availability", f"{res['sys_reliability']*100:.4f}%")
     
     if res['bess_desc'] != "None":
@@ -644,19 +680,17 @@ with tab_edit:
 with tab_comp:
     st.header("Comparison")
     
-    # Conditional Number Formatting based on Unit System of Best Case (simplification)
-    # Ideally should be per-row, but Pandas Styler is column-based.
-    # We will detect unit from the FIRST scenario to set column format.
+    # Conditional Number Formatting
     first_scen_inputs = st.session_state['project']['scenarios'][list(st.session_state['project']['scenarios'].keys())[0]]
     is_imp_global = "Imperial" in first_scen_inputs.get('unit_system', 'Metric')
-    hr_format = '{:,.0f}' if is_imp_global else '{:,.2f}'
+    hr_format_table = '{:,.0f}' if is_imp_global else '{:,.2f}'
     
     st.dataframe(
         df[cols_show].style.format({
             'LCOE ($/kWh)': '${:.4f}', 
             'CAPEX (M USD)': '${:,.1f}', 
             'Fuel Cost ($/yr)': '${:,.0f}', 
-            'Net Heat Rate': hr_format,
+            'Net Heat Rate': hr_format_table,
             'Availability (%)': '{:.4f}%'
         }).highlight_min(subset=['LCOE ($/kWh)', 'CAPEX (M USD)'], color='lightgreen').highlight_max(subset=['LCOE ($/kWh)', 'CAPEX (M USD)'], color='lightpink'),
         use_container_width=True
@@ -678,18 +712,22 @@ with tab_rep:
     }
     </script>
     <div style="display: flex; justify-content: center; margin: 20px;">
-        <button onclick="printPage()" style="
-            background-color: #FFCD11; 
-            color: black; 
-            border: 2px solid black; 
-            padding: 12px 24px; 
-            font-size: 16px; 
-            font-weight: bold; 
-            border-radius: 4px; 
-            cursor: pointer;">
+        <button onclick="printPage()" class="print-btn">
             🖨️ Print Executive Report to PDF
         </button>
     </div>
+    <style>
+    .print-btn {
+        background-color: #FFCD11; 
+        color: black; 
+        border: 2px solid black; 
+        padding: 12px 24px; 
+        font-size: 16px; 
+        font-weight: bold; 
+        border-radius: 4px; 
+        cursor: pointer;
+    }
+    </style>
     """, height=80)
 
     # PAGE 1 HEADER
@@ -725,6 +763,14 @@ with tab_rep:
     k2.metric("Total Project CAPEX", f"${best_data['CAPEX (M USD)']:.1f} M")
     k3.metric("Annual Fuel Cost", f"${best_data['Fuel Cost ($/yr)']:,.0f}")
 
+    # Heat Rate Formatting for Report Text
+    hr_val_rep = best_data['Net Heat Rate']
+    hr_unit_rep = best_data['HR Unit']
+    if "Btu" in hr_unit_rep:
+        hr_str_rep = f"{hr_val_rep:,.0f}"
+    else:
+        hr_str_rep = f"{hr_val_rep:,.2f}"
+
     st.subheader("Technical Configuration")
     t1, t2 = st.columns(2)
     with t1:
@@ -737,7 +783,7 @@ with tab_rep:
     with t2:
         st.markdown(f"""
         * **BESS Capacity:** {best_kpis['bess_desc']}
-        * **Net Heat Rate:** {best_data['Net Heat Rate']} {best_data['HR Unit']}
+        * **Net Heat Rate:** {hr_str_rep} {hr_unit_rep}
         * **PUE:** {best_kpis['pue']:.3f}
         * **LNG Storage:** {best_inputs.get('lng_days')} days autonomy
         """)
@@ -759,7 +805,7 @@ with tab_rep:
         'LCOE ($/kWh)': '${:.4f}', 
         'CAPEX (M USD)': '${:,.1f}', 
         'Fuel Cost ($/yr)': '${:,.0f}', 
-        'Net Heat Rate': hr_format,
+        'Net Heat Rate': hr_format_table,
         'Availability (%)': '{:.4f}%'
     }))
     
@@ -771,4 +817,4 @@ with tab_rep:
 
 # --- FOOTER ---
 st.markdown("---")
-st.caption(f"CAT Architect v5.3 | {proj.get('created_at','')}")
+st.caption(f"Prepared by: {st.session_state['project'].get('prepared_by')} | CAT Architect v5.4")
