@@ -4,12 +4,13 @@ import numpy as np
 import math
 import plotly.express as px
 import json
+import time
 
 # --- PAGE CONFIGURATION ---
-st.set_page_config(page_title="CAT Architect v4.6", page_icon="🏗️", layout="wide")
+st.set_page_config(page_title="CAT Architect v4.7", page_icon="🏗️", layout="wide")
 
 # ==============================================================================
-# 1. THE DATA & PHYSICS ENGINE
+# 1. THE DATA & PHYSICS ENGINE (UNCHANGED)
 # ==============================================================================
 
 leps_gas_library = {
@@ -23,8 +24,6 @@ leps_gas_library = {
 
 def calculate_kpis(inputs):
     res = {}
-    
-    # --- 1. SETUP ---
     model_key = inputs.get("model", "G3520K")
     spec = leps_gas_library[model_key]
     
@@ -33,7 +32,6 @@ def calculate_kpis(inputs):
     dc_aux = inputs.get("dc_aux", 0.05)
     use_chp = inputs.get("use_chp", True)
     
-    # Cooling & PUE
     if use_chp:
         p_cooling_elec = p_it * 0.03 
         p_net = p_it * (1 + dc_aux) + p_cooling_elec
@@ -46,7 +44,7 @@ def calculate_kpis(inputs):
     gen_parasitic = inputs.get("gen_parasitic", 0.025)
     p_gross = (p_net * (1 + dist_loss)) / (1 - gen_parasitic)
     
-    # Derates
+    # Derate
     if inputs.get("derate_mode") == "Manual":
         derate = 1.0 - (inputs.get("manual_derate", 5.0) / 100.0)
     else:
@@ -57,7 +55,7 @@ def calculate_kpis(inputs):
         
     unit_site_cap = spec['iso_mw'] * derate
     
-    # --- 2. GENERATOR OPTIMIZATION LOOP ---
+    # Fleet Sizing
     target_lf = 0.95 if inputs.get("use_bess", True) else 0.90
     n_run = math.ceil(p_gross / (unit_site_cap * target_lf))
     n_maint = math.ceil(n_run * inputs.get("maint_outage_pct", 0.05))
@@ -85,7 +83,7 @@ def calculate_kpis(inputs):
     n_total = n_run + n_maint + n_reserve
     installed_mw = n_total * unit_site_cap
     
-    # --- 3. BESS OPTIMIZATION LOOP ---
+    # BESS
     capex_bess = 0
     mw_bess_total = 0
     mwh_bess_total = 0
@@ -96,13 +94,11 @@ def calculate_kpis(inputs):
     if inputs.get("use_bess", True):
         step_mw_req = p_it * (inputs.get("step_load_req", 40.0)/100)
         mw_bess_req = max(step_mw_req, unit_site_cap) 
-        
         bess_fail_rate = inputs.get("bess_maint_pct", 0.01) + inputs.get("bess_for_pct", 0.005)
         
         for r in range(0, 10):
             sys_unavail = (bess_fail_rate ** (1 + r))
             sys_avail = 1.0 - sys_unavail
-            
             if sys_avail >= target_av:
                 n_bess_red = r
                 prob_bess_sys = sys_avail
@@ -112,18 +108,17 @@ def calculate_kpis(inputs):
             
         mw_bess_total = mw_bess_req * (1 + n_bess_red)
         mwh_bess_total = mw_bess_total * 2
-        
         capex_bess = (mw_bess_total * 1000 * inputs.get("cost_bess_inv", 120)) + (mwh_bess_total * 1000 * inputs.get("cost_bess_kwh", 280))
         bess_desc = f"{mw_bess_total:.1f} MW / {mwh_bess_total:.1f} MWh (N+{n_bess_red})"
 
     sys_reliability = prob_gen_sys * prob_bess_sys
 
-    # --- 4. LOGISTICS & EMISSIONS ---
+    # Capex Agg
     capex_gen = n_total * 1000 * inputs.get("cost_kw", spec['cost_kw'])
     capex_inst = n_total * 1000 * inputs.get("inst_kw", spec['inst_kw'])
-    
     capex_log = 0
     fuel_mmbtu_hr = p_gross * (spec['hr']/1000)
+    
     if inputs.get("has_lng", True):
         vol_day = (fuel_mmbtu_hr * 24) * 12.5 
         n_tanks = math.ceil((vol_day * inputs.get("lng_days", 5)) / inputs.get("tank_size", 10000))
@@ -136,20 +131,16 @@ def calculate_kpis(inputs):
     total_bhp = p_gross * 1341
     nox_tpy = (spec['nox'] * total_bhp * 8760) / 907185
     limit_nox = 250.0 if "EPA" in inputs.get("reg_zone", "") else (150.0 if "EU" in inputs.get("reg_zone", "") else 9999)
-    
     req_scr = nox_tpy > limit_nox
-    if req_scr:
-        capex_emis += installed_mw * 1000 * inputs.get("cost_scr", 60.0)
-    if inputs.get("force_oxicat", False):
-        capex_emis += installed_mw * 1000 * inputs.get("cost_oxicat", 15.0)
+    if req_scr: capex_emis += installed_mw * 1000 * inputs.get("cost_scr", 60.0)
+    if inputs.get("force_oxicat", False): capex_emis += installed_mw * 1000 * inputs.get("cost_oxicat", 15.0)
         
     capex_chp = 0
-    if use_chp:
-        capex_chp = capex_gen * inputs.get("chp_cost_factor", 0.20)
+    if use_chp: capex_chp = capex_gen * inputs.get("chp_cost_factor", 0.20)
         
     total_capex = (capex_gen + capex_inst + capex_bess + capex_log + capex_emis + capex_chp) / 1e6
     
-    # --- 5. FINANCIALS ---
+    # Financials
     gas_price = inputs.get("gas_price", 6.5)
     if inputs.get("is_lng_primary", False): gas_price += inputs.get("vp_premium", 4.0)
     
@@ -175,37 +166,24 @@ def calculate_kpis(inputs):
     
     lcoe = total_ann_cost / (p_net * 8760 * 1000)
     
-    # --- 6. NOISE ---
+    # Noise
     dist_m = inputs.get("dist_neighbor", 100.0)
     attenuation = 20 * math.log10(dist_m) + 8
     total_source = inputs.get("source_noise_dba", 85.0) + (10 * math.log10(n_run))
     noise_at_neighbor = total_source - attenuation
     noise_excess = max(0, noise_at_neighbor - inputs.get("noise_limit", 70.0))
     
-    hr_net_btu = (fuel_mmbtu_hr * 1e6) / (p_net * 1000)
-    
     res = {
-        "model": model_key,
-        "n_total": n_total,
-        "n_run": n_run,
-        "n_reserve": n_reserve,
-        "n_bess_red": n_bess_red,
-        "p_net": p_net,
-        "pue": pue,
-        "total_capex": total_capex,
-        "lcoe": lcoe,
-        "fuel_cost": fuel_cost_yr,
-        "hr_net_btu": hr_net_btu,
-        "sys_reliability": sys_reliability,
-        "bess_desc": bess_desc,
-        "noise_val": noise_at_neighbor,
-        "noise_limit": inputs.get("noise_limit", 70.0),
-        "noise_excess": noise_excess
+        "model": model_key, "n_total": n_total, "n_reserve": n_reserve, "n_bess_red": n_bess_red,
+        "p_net": p_net, "pue": pue, "total_capex": total_capex, "lcoe": lcoe,
+        "fuel_cost": fuel_cost_yr, "hr_net_btu": (fuel_mmbtu_hr * 1e6) / (p_net * 1000),
+        "sys_reliability": sys_reliability, "bess_desc": bess_desc,
+        "noise_val": noise_at_neighbor, "noise_limit": inputs.get("noise_limit", 70.0), "noise_excess": noise_excess
     }
     return res
 
 # ==============================================================================
-# 2. STATE MANAGEMENT
+# 2. STATE MANAGEMENT & SCENARIO LOGIC
 # ==============================================================================
 
 defaults = {
@@ -213,31 +191,21 @@ defaults = {
     "unit_system": "Metric (SI)", "freq": 60, "derate_mode": "Auto-Calculate", "manual_derate": 5.0,
     "site_temp": 35, "site_alt": 100, "mn": 80, "reg_zone": "LatAm / No-Reg",
     "dist_neighbor": 100.0, "noise_limit": 70.0, "source_noise_dba": 85.0,
-    
     # Load
-    "dc_type": "AI Factory", "p_it": 100.0, "dc_aux": 0.05, "avail_req": 99.99, 
-    "step_load_req": 40.0, "volt_kv": 13.8,
-    
+    "dc_type": "AI Factory", "p_it": 100.0, "dc_aux": 0.05, "avail_req": 99.99, "step_load_req": 40.0, "volt_kv": 13.8,
     # Tech
-    "model": "G3520K", "gen_parasitic": 0.025, 
-    "maint_outage_pct": 0.05, "forced_outage_pct": 0.02,
-    "use_bess": True, "bess_maint_pct": 0.01, "bess_for_pct": 0.005,
-    "cost_bess_kwh": 280.0, "cost_bess_inv": 120.0, "bess_om": 10.0,
-    
+    "model": "G3520K", "gen_parasitic": 0.025, "maint_outage_pct": 0.05, "forced_outage_pct": 0.02,
+    "use_bess": True, "bess_maint_pct": 0.01, "bess_for_pct": 0.005, "cost_bess_kwh": 280.0, "cost_bess_inv": 120.0, "bess_om": 10.0,
     # Logistics
-    "use_chp": True, "chp_cost_factor": 0.20, "cop_double": 1.2, "cop_single": 0.7,
-    "pue_input": 1.45, "dist_loss": 0.01,
+    "use_chp": True, "chp_cost_factor": 0.20, "cop_double": 1.2, "cop_single": 0.7, "pue_input": 1.45, "dist_loss": 0.01,
     "has_lng": True, "is_lng_primary": False, "lng_days": 5, "tank_size": 10000.0, "tank_cost": 50000.0, "tank_mob": 5000.0,
-    "dist_pipe": 1000.0, 
-    "cost_scr": 60.0, "cost_oxicat": 15.0, "force_oxicat": False, "urea_days": 7,
-    
+    "dist_pipe": 1000.0, "cost_scr": 60.0, "cost_oxicat": 15.0, "force_oxicat": False, "urea_days": 7,
     # Econ
-    "cost_kw": 575.0, "inst_kw": 650.0, "tank_cost": 50000.0,
-    "cost_bess_kwh": 280.0, "cost_bess_inv": 120.0, "bess_om": 10.0,
-    "gas_price": 6.5, "vp_premium": 4.0, "om_var": 12.0, "grid_price": 0.15,
+    "cost_kw": 575.0, "inst_kw": 650.0, "gas_price": 6.5, "vp_premium": 4.0, "om_var": 12.0, "grid_price": 0.15,
     "wacc": 0.08, "years": 20, "target_lcoe": 0.11
 }
 
+# --- INIT STATE ---
 if 'project' not in st.session_state:
     st.session_state['project'] = {
         "name": "Project Alpha",
@@ -245,12 +213,8 @@ if 'project' not in st.session_state:
         "scenarios": { "Base Case": defaults.copy() }
     }
     st.session_state['active_scenario'] = "Base Case"
-else:
-    curr_scen = st.session_state['project']['scenarios'][st.session_state['active_scenario']]
-    for k, v in defaults.items():
-        if k not in curr_scen:
-            curr_scen[k] = v
 
+# --- HELPER FUNCTIONS ---
 def get_val(key):
     scen = st.session_state['active_scenario']
     return st.session_state['project']['scenarios'][scen].get(key, defaults.get(key, 0))
@@ -259,34 +223,80 @@ def set_val(key, value):
     scen = st.session_state['active_scenario']
     st.session_state['project']['scenarios'][scen][key] = value
 
+def create_next_scenario():
+    i = 1
+    while f"Scenario {i}" in st.session_state['project']['scenarios']:
+        i += 1
+    new_name = f"Scenario {i}"
+    # Clone current active logic
+    curr = st.session_state['active_scenario']
+    st.session_state['project']['scenarios'][new_name] = st.session_state['project']['scenarios'][curr].copy()
+    st.session_state['active_scenario'] = new_name
+    return new_name
+
+def rename_scenario(old_name, new_name):
+    if new_name and new_name != old_name:
+        if new_name not in st.session_state['project']['scenarios']:
+            data = st.session_state['project']['scenarios'].pop(old_name)
+            st.session_state['project']['scenarios'][new_name] = data
+            st.session_state['active_scenario'] = new_name
+            st.rerun()
+        else:
+            st.warning("Name exists!")
+
 # ==============================================================================
-# 3. SIDEBAR
+# 3. SIDEBAR (PROJECT MANAGER)
 # ==============================================================================
 
 with st.sidebar:
-    st.title("CAT Architect v4.6")
-    with st.expander("💾 Database (JSON)", expanded=False):
-        proj_data = json.dumps(st.session_state['project'], indent=2)
-        st.download_button("Download Project", proj_data, f"{st.session_state['project']['name']}.json", "application/json")
-        uploaded_file = st.file_uploader("Load Project", type=["json"])
-        if uploaded_file:
-            data = json.load(uploaded_file)
-            st.session_state['project'] = data
-            st.session_state['active_scenario'] = list(data['scenarios'].keys())[0]
+    st.title("CAT Architect v4.7")
+    
+    st.markdown("### 📂 Project Files")
+    
+    # LOAD
+    uploaded_file = st.file_uploader("Load Project", type=["json"], label_visibility="collapsed")
+    if uploaded_file:
+        data = json.load(uploaded_file)
+        st.session_state['project'] = data
+        st.session_state['active_scenario'] = list(data['scenarios'].keys())[0]
+        st.success("Loaded!")
+        time.sleep(1)
+        st.rerun()
+
+    # SAVE (Direct Download)
+    proj_json = json.dumps(st.session_state['project'], indent=2)
+    st.download_button("💾 Save Project", proj_json, f"{st.session_state['project']['name']}.json", "application/json", use_container_width=True)
+    
+    # SAVE AS
+    with st.expander("Save As..."):
+        new_proj_name = st.text_input("New Filename", value=st.session_state['project']['name'])
+        if st.button("Update Name"):
+            st.session_state['project']['name'] = new_proj_name
             st.rerun()
+        st.download_button("Download Copy", proj_json, f"{new_proj_name}.json", "application/json")
 
     st.divider()
-    st.text_input("Project Name", value=st.session_state['project']['name'], key="proj_name_input", on_change=lambda: st.session_state['project'].update({"name": st.session_state.proj_name_input}))
     
+    # SCENARIO MANAGER
+    st.markdown("### 🎛️ Scenarios")
+    
+    # Auto-Increment Create
+    if st.button("➕ Create Scenario", use_container_width=True):
+        new_name = create_next_scenario()
+        st.success(f"Created {new_name}")
+        st.rerun()
+        
+    # Selector
     scenarios = list(st.session_state['project']['scenarios'].keys())
-    active = st.selectbox("Active Scenario", scenarios, index=scenarios.index(st.session_state['active_scenario']))
+    # Fail-safe index
+    try:
+        idx = scenarios.index(st.session_state['active_scenario'])
+    except:
+        idx = 0
+        st.session_state['active_scenario'] = scenarios[0]
+        
+    active = st.selectbox("Active Scenario", scenarios, index=idx)
     st.session_state['active_scenario'] = active
-    
-    new_scen = st.text_input("New Scenario", placeholder="Name...")
-    if st.button("➕ Create Scenario"):
-        if new_scen and new_scen not in scenarios:
-            st.session_state['project']['scenarios'][new_scen] = st.session_state['project']['scenarios'][active].copy()
-            st.rerun()
 
 # ==============================================================================
 # 4. MAIN EDITOR
@@ -295,8 +305,15 @@ with st.sidebar:
 tab_edit, tab_comp, tab_rep = st.tabs(["📝 Scenario Editor", "📊 Comparative Analysis", "📑 Report"])
 
 with tab_edit:
-    st.subheader(f"Editing: {st.session_state['active_scenario']}")
+    c_title, c_rename = st.columns([2, 1])
+    c_title.subheader(f"Editing: {st.session_state['active_scenario']}")
     
+    # SCENARIO RENAMING
+    with c_rename:
+        new_name_input = st.text_input("Rename Scenario", value=st.session_state['active_scenario'], label_visibility="collapsed")
+        if new_name_input != st.session_state['active_scenario']:
+            rename_scenario(st.session_state['active_scenario'], new_name_input)
+
     t1, t2, t3, t4, t5 = st.tabs(["🌍 Global & Site", "🏗️ Load & Config", "⚙️ Technology", "🚚 Logistics & BOP", "💰 Economics"])
     
     # 1. Global
@@ -564,13 +581,10 @@ with tab_comp:
             r['Scenario'] = name
             
             is_imp_loc = full.get("unit_system") == "Imperial (US)"
-            # Unit Handling for Table
             r['Net Heat Rate'] = r['hr_net_btu'] if is_imp_loc else (r['hr_net_btu'] * 0.001055)
             r['HR Unit'] = "Btu/kWh" if is_imp_loc else "MJ/kWh"
-            
             r['Availability (%)'] = r['sys_reliability'] * 100
             
-            # Rename for display
             r['LCOE ($/kWh)'] = r['lcoe']
             r['CAPEX (M USD)'] = r['total_capex']
             r['Fuel Cost ($/yr)'] = r['fuel_cost']
@@ -583,7 +597,6 @@ with tab_comp:
         
         cols_show = ['LCOE ($/kWh)', 'CAPEX (M USD)', 'Fuel Cost ($/yr)', 'Total Units', 'Generator Model', 'Net Heat Rate', 'HR Unit', 'Availability (%)']
         
-        # Display with formatting
         st.dataframe(
             df[cols_show].style.format({
                 'LCOE ($/kWh)': '${:.4f}', 
@@ -609,4 +622,4 @@ with tab_rep:
 
 # --- FOOTER ---
 st.markdown("---")
-st.caption("CAT Architect v4.6 | Final Visual Enhancements")
+st.caption("CAT Architect v4.7 | Scenario Management")
