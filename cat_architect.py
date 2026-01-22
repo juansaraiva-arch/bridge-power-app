@@ -1,5 +1,4 @@
 import streamlit as st
-import streamlit.components.v1 as components
 import pandas as pd
 import numpy as np
 import math
@@ -9,38 +8,55 @@ import json
 import time
 
 # --- PAGE CONFIGURATION ---
-st.set_page_config(page_title="CAT Architect v4.10", page_icon="🏗️", layout="wide")
+st.set_page_config(page_title="CAT Architect v5.0", page_icon="🏗️", layout="wide")
 
-# --- CSS FOR REPORT FORMATTING ---
+# --- CSS FOR PRINTING (ROBUST) ---
 st.markdown("""
 <style>
     @media print {
-        /* Hide UI elements during print */
+        /* Ocultar interfaz de Streamlit */
         [data-testid="stSidebar"], [data-testid="stHeader"], .stApp > header, 
         footer, .stButton, .stDeployButton, [data-testid="stToolbar"] { 
             display: none !important; 
         }
         
-        /* Layout adjustments */
+        /* Ajustar márgenes para papel */
         .block-container { 
-            padding-top: 0 !important; 
-            padding-left: 0.5rem !important; 
-            padding-right: 0.5rem !important; 
+            padding: 0 !important; 
             max-width: 100% !important;
+            margin: 0 !important;
         }
         
-        /* Force Page Break */
+        /* Forzar Salto de Página */
         .page-break { 
             page-break-before: always !important; 
-            break-before: always !important;
             display: block !important; 
-            height: 0px !important;
-            visibility: hidden;
+            height: 50px !important;
+            content: " ";
         }
         
-        /* Ensure charts print */
-        .js-plotly-plot { margin-bottom: 20px !important; }
+        /* Ajustar gráficos para impresión */
+        .js-plotly-plot { margin-bottom: 20px !important; width: 100% !important; }
+        
+        /* Tipografía de reporte */
+        h1, h2, h3 { color: #333 !important; }
+        p, li, td { color: #000 !important; font-size: 12pt !important; }
     }
+    
+    /* Botón de Impresión Estilizado */
+    .print-btn-container { text-align: center; margin: 20px 0; }
+    .print-btn {
+        background-color: #FFCD11; 
+        color: #000;
+        border: 2px solid #000;
+        padding: 12px 24px;
+        font-size: 16px;
+        font-weight: bold;
+        cursor: pointer;
+        border-radius: 5px;
+        box-shadow: 2px 2px 5px rgba(0,0,0,0.2);
+    }
+    .print-btn:hover { background-color: #ffdb4d; }
 </style>
 """, unsafe_allow_html=True)
 
@@ -90,7 +106,7 @@ def calculate_kpis(inputs):
         
     unit_site_cap = spec['iso_mw'] * derate
     
-    # Fleet Sizing
+    # Fleet
     target_lf = 0.95 if inputs.get("use_bess", True) else 0.90
     n_run = math.ceil(p_gross / (unit_site_cap * target_lf))
     n_maint = math.ceil(n_run * inputs.get("maint_outage_pct", 0.05))
@@ -100,14 +116,12 @@ def calculate_kpis(inputs):
     
     n_reserve = 0
     prob_gen_sys = 0.0
-    
     for r in range(0, 20):
         n_pool = n_run + r
         p_accum = 0.0
         for k in range(n_run, n_pool + 1):
             comb = math.comb(n_pool, k)
             p_accum += comb * (prob_unit_ok ** k) * ((1 - prob_unit_ok) ** (n_pool - k))
-        
         if p_accum >= target_av:
             n_reserve = r
             prob_gen_sys = p_accum
@@ -223,11 +237,6 @@ def calculate_kpis(inputs):
 # ==============================================================================
 
 defaults = {
-    # Metadata
-    "client": "Client Name", "location": "Site Location", "quote_ref": "QT-001",
-    "contact_name": "Contact Name", "contact_email": "email@client.com", "contact_phone": "+1 555 0000",
-    "prepared_by": "Sales Engineer",
-    
     # Global
     "unit_system": "Metric (SI)", "freq": 60, "derate_mode": "Auto-Calculate", "manual_derate": 5.0,
     "site_temp": 35, "site_alt": 100, "mn": 80, "reg_zone": "LatAm / No-Reg",
@@ -246,16 +255,23 @@ defaults = {
     "wacc": 0.08, "years": 20, "target_lcoe": 0.11
 }
 
-# --- INIT STATE ---
+# --- STATE MIGRATION LOGIC (Fix "Sigue Igual" Issue) ---
 if 'project' not in st.session_state:
     st.session_state['project'] = {
-        "name": "New Project", # FIXED: Removed "Project Alpha"
+        "name": "New Project",
         "created_at": str(pd.Timestamp.now().strftime("%Y-%m-%d")),
+        "client": "", "location": "", "quote_ref": "", "contact_name": "", "contact_email": "", "contact_phone": "",
         "scenarios": { "Base Case": defaults.copy() }
     }
     st.session_state['active_scenario'] = "Base Case"
+else:
+    # FORCE UPDATE META FIELDS IF MISSING (MIGRATION)
+    if "client" not in st.session_state['project']:
+        st.session_state['project'].update({
+            "client": "", "location": "", "quote_ref": "", 
+            "contact_name": "", "contact_email": "", "contact_phone": "", "prepared_by": ""
+        })
 
-# --- HELPER FUNCTIONS ---
 def get_val(key):
     scen = st.session_state['active_scenario']
     return st.session_state['project']['scenarios'][scen].get(key, defaults.get(key, 0))
@@ -289,46 +305,48 @@ def rename_scenario(old_name, new_name):
 # ==============================================================================
 
 with st.sidebar:
-    st.title("CAT Architect v4.10")
+    st.title("CAT Architect v5.0")
     
-    st.markdown("### 📂 Project Details")
-    # Project Metadata
-    c_proj1, c_proj2 = st.columns(2)
-    st.session_state['project']['client'] = st.text_input("Client", st.session_state['project'].get('client', 'Client Name'))
-    st.session_state['project']['location'] = st.text_input("Location", st.session_state['project'].get('location', 'Site Location'))
-    st.session_state['project']['quote_ref'] = st.text_input("Ref/Quote", st.session_state['project'].get('quote_ref', 'QT-001'))
-    st.session_state['project']['prepared_by'] = st.text_input("Prepared By", st.session_state['project'].get('prepared_by', 'Engineer'))
+    st.markdown("### 📂 Project Data")
     
-    with st.expander("👤 Contact Info"):
-        st.session_state['project']['contact_name'] = st.text_input("Name", st.session_state['project'].get('contact_name', ''))
-        st.session_state['project']['contact_email'] = st.text_input("Email", st.session_state['project'].get('contact_email', ''))
-        st.session_state['project']['contact_phone'] = st.text_input("Phone", st.session_state['project'].get('contact_phone', ''))
+    # METADATA INPUTS (Requested Feature)
+    st.session_state['project']['client'] = st.text_input("Client", st.session_state['project']['client'], placeholder="Customer Name")
+    st.session_state['project']['location'] = st.text_input("Location", st.session_state['project']['location'], placeholder="Site City/Country")
+    
+    c_ref1, c_ref2 = st.columns(2)
+    st.session_state['project']['quote_ref'] = c_ref1.text_input("Ref #", st.session_state['project']['quote_ref'], placeholder="QT-123")
+    st.session_state['project']['prepared_by'] = c_ref2.text_input("Engineer", st.session_state['project'].get('prepared_by',''), placeholder="Your Name")
+    
+    with st.expander("👤 Contact Details"):
+        st.session_state['project']['contact_name'] = st.text_input("Contact Name", st.session_state['project']['contact_name'])
+        st.session_state['project']['contact_email'] = st.text_input("Email", st.session_state['project']['contact_email'])
+        st.session_state['project']['contact_phone'] = st.text_input("Phone", st.session_state['project']['contact_phone'])
 
     st.divider()
     
-    # LOAD/SAVE
-    uploaded_file = st.file_uploader("Load Project (.json)", type=["json"], label_visibility="collapsed")
+    # FILE OPS
+    col_save, col_load = st.columns(2)
+    proj_json = json.dumps(st.session_state['project'], indent=2)
+    col_save.download_button("💾 Save", proj_json, f"{st.session_state['project']['name']}.json", "application/json")
+    
+    uploaded_file = col_load.file_uploader("📂 Load", type=["json"], label_visibility="collapsed")
     if uploaded_file:
         data = json.load(uploaded_file)
         st.session_state['project'] = data
         st.session_state['active_scenario'] = list(data['scenarios'].keys())[0]
         st.success("Loaded!")
-        time.sleep(1)
+        time.sleep(0.5)
         st.rerun()
-
-    proj_json = json.dumps(st.session_state['project'], indent=2)
-    st.download_button("💾 Save Project", proj_json, f"{st.session_state['project']['name']}.json", "application/json", use_container_width=True)
-    
+        
     with st.expander("Save As..."):
-        new_proj_name = st.text_input("New Filename", value=st.session_state['project']['name'])
-        if st.button("Update Name"):
+        new_proj_name = st.text_input("Filename", value=st.session_state['project']['name'])
+        if st.button("Update Filename"):
             st.session_state['project']['name'] = new_proj_name
             st.rerun()
-        st.download_button("Download Copy", proj_json, f"{new_proj_name}.json", "application/json")
 
     st.divider()
     
-    # SCENARIO MANAGER
+    # SCENARIO OPS
     st.markdown("### 🎛️ Scenarios")
     if st.button("➕ Create Scenario", use_container_width=True):
         new_name = create_next_scenario()
@@ -346,7 +364,7 @@ with st.sidebar:
     st.session_state['active_scenario'] = active
 
 # ==============================================================================
-# 4. MAIN EDITOR (UNCHANGED LOGIC)
+# 4. MAIN EDITOR
 # ==============================================================================
 
 tab_edit, tab_comp, tab_rep = st.tabs(["📝 Scenario Editor", "📊 Comparative Analysis", "📑 Report"])
@@ -614,8 +632,9 @@ with tab_edit:
     if res['noise_excess'] > 0:
         st.error(f"🔊 Noise Violation: {res['noise_val']:.1f} dBA > Limit {res['noise_limit']} dBA. Requires mitigation.")
 
+# --- TAB 2: COMPARATOR ---
 with tab_comp:
-    st.header("Comparison")
+    st.header("Scenario Comparison")
     if len(st.session_state['project']['scenarios']) > 0:
         all_res = []
         for name, params in st.session_state['project']['scenarios'].items():
@@ -628,6 +647,7 @@ with tab_comp:
             r['Net Heat Rate'] = r['hr_net_btu'] if is_imp_loc else (r['hr_net_btu'] * 0.001055)
             r['HR Unit'] = "Btu/kWh" if is_imp_loc else "MJ/kWh"
             r['Availability (%)'] = r['sys_reliability'] * 100
+            
             r['LCOE ($/kWh)'] = r['lcoe']
             r['CAPEX (M USD)'] = r['total_capex']
             r['Fuel Cost ($/yr)'] = r['fuel_cost']
@@ -658,48 +678,49 @@ with tab_comp:
 
 # --- TAB 3: REPORT GENERATOR ---
 with tab_rep:
-    # --- PAGE 1: EXECUTIVE SUMMARY ---
-    st.title("📄 Project Executive Report")
-    
-    # Metadata Grid
-    proj = st.session_state['project']
-    
-    with st.container():
-        st.markdown(f"## **{proj['name']}**")
-        
-        # HTML Table for Metadata (Clean Print Look)
-        meta_html = f"""
-        <table style="width:100%; border-collapse: collapse; margin-bottom: 20px;">
-            <tr>
-                <td style="padding: 8px; border: 1px solid #ddd;"><strong>Client:</strong> {proj.get('client','')}</td>
-                <td style="padding: 8px; border: 1px solid #ddd;"><strong>Location:</strong> {proj.get('location','')}</td>
-                <td style="padding: 8px; border: 1px solid #ddd;"><strong>Date:</strong> {proj.get('created_at','')}</td>
-            </tr>
-            <tr>
-                <td style="padding: 8px; border: 1px solid #ddd;"><strong>Contact:</strong> {proj.get('contact_name','')}</td>
-                <td style="padding: 8px; border: 1px solid #ddd;"><strong>Email:</strong> {proj.get('contact_email','')}</td>
-                <td style="padding: 8px; border: 1px solid #ddd;"><strong>Ref:</strong> {proj.get('quote_ref','')}</td>
-            </tr>
-        </table>
-        """
-        st.markdown(meta_html, unsafe_allow_html=True)
+    # PRINT BUTTON
+    st.markdown("""
+        <div class="print-btn-container">
+            <button class="print-btn" onclick="window.print()">🖨️ Print to PDF</button>
+        </div>
+    """, unsafe_allow_html=True)
 
-    # Best Scenario Logic
+    # HEADER
+    proj = st.session_state['project']
     best_scen_name = df['LCOE ($/kWh)'].idxmin()
     best_data = df.loc[best_scen_name]
     best_inputs = defaults.copy()
     best_inputs.update(st.session_state['project']['scenarios'][best_scen_name])
     best_kpis = calculate_kpis(best_inputs)
 
+    # PAGE 1: EXECUTIVE SUMMARY
+    st.markdown(f"## **{proj['name']}**")
+    
+    # Metadata Table
+    meta_html = f"""
+    <table style="width:100%; border: 1px solid #ddd; border-collapse: collapse; margin-bottom: 20px;">
+        <tr>
+            <td style="padding: 8px; border: 1px solid #ddd;"><strong>Client:</strong> {proj.get('client','')}</td>
+            <td style="padding: 8px; border: 1px solid #ddd;"><strong>Location:</strong> {proj.get('location','')}</td>
+            <td style="padding: 8px; border: 1px solid #ddd;"><strong>Ref:</strong> {proj.get('quote_ref','')}</td>
+        </tr>
+        <tr>
+            <td style="padding: 8px; border: 1px solid #ddd;"><strong>Contact:</strong> {proj.get('contact_name','')}</td>
+            <td style="padding: 8px; border: 1px solid #ddd;"><strong>Email:</strong> {proj.get('contact_email','')}</td>
+            <td style="padding: 8px; border: 1px solid #ddd;"><strong>Prepared By:</strong> {proj.get('prepared_by','')}</td>
+        </tr>
+    </table>
+    """
+    st.markdown(meta_html, unsafe_allow_html=True)
+
     st.success(f"🏆 **Recommended Strategy:** {best_scen_name}")
 
-    # Top Level Metrics
     k1, k2, k3 = st.columns(3)
     k1.metric("Target LCOE", f"${best_data['LCOE ($/kWh)']:.4f}/kWh")
     k2.metric("Total Project CAPEX", f"${best_data['CAPEX (M USD)']:.1f} M")
     k3.metric("Annual Fuel Cost", f"${best_data['Fuel Cost ($/yr)']:,.0f}")
 
-    st.markdown("### Technical Configuration")
+    st.subheader("Technical Configuration")
     t1, t2 = st.columns(2)
     with t1:
         st.markdown(f"""
@@ -716,26 +737,19 @@ with tab_rep:
         * **LNG Storage:** {best_inputs.get('lng_days')} days autonomy
         """)
 
-    st.markdown("### Financial Breakdown")
+    st.subheader("Cost Structure")
     labels = ['Fuel', 'CAPEX Amortization', 'O&M']
     values = [best_kpis['fuel_cost'], best_kpis['capex_ann'], best_kpis['om_cost']]
     fig_donut = go.Figure(data=[go.Pie(labels=labels, values=values, hole=.4)])
     fig_donut.update_layout(height=300, margin=dict(t=0, b=0, l=0, r=0))
     st.plotly_chart(fig_donut, use_container_width=True)
 
-    # --- PRINT BUTTON ---
-    # Using iframe hack for reliable printing
-    st.markdown("""
-        <button class="print-btn" onclick="window.parent.print()">
-            🖨️ Print Executive Report to PDF
-        </button>
-    """, unsafe_allow_html=True)
-
     # --- PAGE BREAK ---
     st.markdown('<div class="page-break"></div>', unsafe_allow_html=True)
 
     # --- PAGE 2: COMPARISON ---
-    st.markdown("## 📊 Scenario Comparison Matrix")
+    st.markdown("## 📊 Scenario Analysis")
+    
     st.table(df[cols_show].style.format({
         'LCOE ($/kWh)': '${:.4f}', 
         'CAPEX (M USD)': '${:,.1f}', 
@@ -744,16 +758,10 @@ with tab_rep:
         'Availability (%)': '{:.4f}%'
     }))
     
-    st.markdown("### Comparative Charts")
     c_p1, c_p2 = st.columns(2)
-    fig_print_1 = px.bar(df, x=df.index, y='LCOE ($/kWh)', color='Generator Model', text_auto='.4f', title="LCOE ($/kWh)")
-    fig_print_1.update_layout(height=400)
     c_p1.plotly_chart(fig_print_1, use_container_width=True)
-    
-    fig_print_2 = px.bar(df, x=df.index, y='CAPEX (M USD)', text_auto='.1f', title="CAPEX (M USD)", color_discrete_sequence=['#EF553B'])
-    fig_print_2.update_layout(height=400)
     c_p2.plotly_chart(fig_print_2, use_container_width=True)
 
 # --- FOOTER ---
 st.markdown("---")
-st.caption(f"Prepared by: {st.session_state['project'].get('prepared_by')} | CAT Architect v4.10")
+st.caption(f"CAT Architect v5.0 | {proj.get('created_at','')}")
