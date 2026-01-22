@@ -6,7 +6,7 @@ import plotly.express as px
 import plotly.graph_objects as go
 
 # --- PAGE CONFIGURATION ---
-st.set_page_config(page_title="CAT Primary Power Solutions v67", page_icon="⚡", layout="wide")
+st.set_page_config(page_title="CAT Primary Power Solutions v68", page_icon="⚡", layout="wide")
 
 # ==============================================================================
 # 0. HYBRID DATA LIBRARY
@@ -855,10 +855,9 @@ with t4:
     
     if enable_lcoe_target and target_lcoe > 0:
         if lcoe > target_lcoe:
-            st.error(f"⚠️ **Target Missed:** Current LCOE **${lcoe:.4f}/kWh** > Target **${target_lcoe:.4f}/kWh**")
+            st.error(f"⚠️ Target Missed: Current LCOE ${lcoe:.4f}/kWh > Target ${target_lcoe:.4f}/kWh")
             st.markdown("### 📉 Cost Reduction Solver")
             
-            # Optimized Columns (Reduced to 4 since CHP removed)
             c_sol1, c_sol2, c_sol3, c_sol4 = st.columns(4)
             
             if n_reserve > 0:
@@ -941,7 +940,7 @@ with t4:
                 c_sol4.caption("Risk: Pipeline dependency only.")
 
         else:
-            st.success(f"🎉 **Target Met:** Current LCOE ${lcoe:.4f}/kWh is below Target ${target_lcoe:.4f}/kWh.")
+            st.success(f"🎉 Target Met: Current LCOE ${lcoe:.4f}/kWh is below Target ${target_lcoe:.4f}/kWh.")
 
     st.info(f"**Inst. Ratio Auto-Calc:** Installation Cost (${gen_install_cost:.0f}/kW) vs Equipment Cost (${gen_unit_cost:.0f}/kW)")
     
@@ -1026,4 +1025,4 @@ with t4:
 
 # --- FOOTER ---
 st.markdown("---")
-st.caption("CAT Primary Power Solutions | v2026.67 | Tech Switch Logic")
+st.caption("CAT Primary Power Solutions | v2026.68 | Final Clean Build")
