@@ -898,13 +898,12 @@ with t3:
 with t4:
     st.subheader("Financial Feasibility & NPV Analysis")
     
-    # LCOE OPTIMIZER LOGIC (v62: UI & Logic Fixes)
+    # LCOE OPTIMIZER LOGIC (v63: Fixed String Formatting)
     if enable_lcoe_target and target_lcoe > 0:
         if lcoe > target_lcoe:
-            st.error(f"⚠️ **Target Missed:** Current LCOE (${lcoe:.4f}/kWh) > Target (${target_lcoe:.4f}/kWh)")
+            st.error(f"⚠️ **Target Missed:** Current LCOE **${lcoe:.4f}/kWh** > Target **${target_lcoe:.4f}/kWh**")
             st.markdown("### 📉 Cost Reduction Solver")
             
-            # Expanded to 4 columns for horizontal layout
             c_sol1, c_sol2, c_sol3, c_sol4 = st.columns(4)
             
             # Sim 1: Reduce Reserve
@@ -937,7 +936,7 @@ with t4:
                 
                 c_sol2.info(f"🔋 **Remove BESS**")
                 c_sol2.metric("New LCOE", f"${sim_lcoe_bess:.4f}", f"{sim_lcoe_bess - lcoe:.4f}")
-                c_sol2.markdown(":red[**Risk: Poor transient response.**]") # FIXED
+                c_sol2.markdown(":red[**Risk: Poor transient response.**]")
 
             # Sim 4: Remove LNG
             if has_lng_storage:
@@ -967,7 +966,8 @@ with t4:
                 c_sol4.caption("Risk: Higher PUE, Electric Cooling.")
 
         else:
-            st.success(f"🎉 **Target Met:** Current LCOE (${lcoe:.4f}/kWh) is below Target (${target_lcoe:.4f}/kWh).")
+            # FIX: Removed embedded bolding on numbers to prevent spacing issues
+            st.success(f"🎉 **Target Met:** Current LCOE ${lcoe:.4f}/kWh is below Target ${target_lcoe:.4f}/kWh.")
 
     # 1. Cost Index Editor
     st.info(f"**Inst. Ratio Auto-Calc:** Installation Cost (${gen_install_cost:.0f}/kW) vs Equipment Cost (${gen_unit_cost:.0f}/kW)")
@@ -1059,4 +1059,4 @@ with t4:
 
 # --- FOOTER ---
 st.markdown("---")
-st.caption("CAT Primary Power Solutions | v2026.62 | Refined LCOE Solver Logic")
+st.caption("CAT Primary Power Solutions | v2026.63 | Spacing Fixes")
