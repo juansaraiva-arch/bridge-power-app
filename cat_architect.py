@@ -6,7 +6,7 @@ import plotly.express as px
 import json
 
 # --- PAGE CONFIGURATION ---
-st.set_page_config(page_title="CAT Architect v4.5", page_icon="🏗️", layout="wide")
+st.set_page_config(page_title="CAT Architect v4.6", page_icon="🏗️", layout="wide")
 
 # ==============================================================================
 # 1. THE DATA & PHYSICS ENGINE
@@ -264,7 +264,7 @@ def set_val(key, value):
 # ==============================================================================
 
 with st.sidebar:
-    st.title("CAT Architect v4.5")
+    st.title("CAT Architect v4.6")
     with st.expander("💾 Database (JSON)", expanded=False):
         proj_data = json.dumps(st.session_state['project'], indent=2)
         st.download_button("Download Project", proj_data, f"{st.session_state['project']['name']}.json", "application/json")
@@ -597,8 +597,8 @@ with tab_comp:
         
         c1, c2, c3 = st.columns(3)
         c1.plotly_chart(px.bar(df, x=df.index, y='LCOE ($/kWh)', color='Generator Model', text_auto='.4f', title="LCOE Comparison"), use_container_width=True)
-        c2.plotly_chart(px.bar(df, x=df.index, y='CAPEX (M USD)', text_auto='.1f', title="CAPEX Comparison"), use_container_width=True)
-        c3.plotly_chart(px.bar(df, x=df.index, y='Fuel Cost ($/yr)', text_auto='.0s', title="Annual Fuel Cost Comparison"), use_container_width=True)
+        c2.plotly_chart(px.bar(df, x=df.index, y='CAPEX (M USD)', text_auto='.1f', title="CAPEX Comparison", color_discrete_sequence=['#EF553B']), use_container_width=True)
+        c3.plotly_chart(px.bar(df, x=df.index, y='Fuel Cost ($/yr)', text_auto='.0s', title="Annual Fuel Cost Comparison", color_discrete_sequence=['#00CC96']), use_container_width=True)
 
 # --- TAB 3: REPORT ---
 with tab_rep:
@@ -609,4 +609,4 @@ with tab_rep:
 
 # --- FOOTER ---
 st.markdown("---")
-st.caption("CAT Architect v4.5 | Optimized Tables & Charts")
+st.caption("CAT Architect v4.6 | Final Visual Enhancements")
