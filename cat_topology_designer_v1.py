@@ -6,7 +6,7 @@ import graphviz
 from scipy.stats import binom
 
 # --- PAGE CONFIG ---
-st.set_page_config(page_title="CAT Topology v19.0 (Excel Library)", page_icon="🚜", layout="wide")
+st.set_page_config(page_title="CAT Topology v19.1 (Bridge Power)", page_icon="🔋", layout="wide")
 
 # --- CSS ---
 st.markdown("""
@@ -23,8 +23,7 @@ st.markdown("""
 # 0. DATA LIBRARIES & UTILS
 # ==============================================================================
 
-# LIBRERÍA ACTUALIZADA DESDE TU EXCEL (Nameplate Capacity ISO)
-# Nota: X"d y Step Cap son estimados estándar (no estaban en el CSV), editables en la GUI.
+# LIBRERÍA (Excel Source)
 CAT_LIBRARY = {
     "XGC1900 (1.9 MW)":   {"mw": 1.9,   "xd": 0.16, "step_cap": 25.0},
     "G3520FR (2.5 MW)":   {"mw": 2.5,   "xd": 0.16, "step_cap": 25.0},
@@ -36,24 +35,22 @@ CAT_LIBRARY = {
     "Titan 350 (38.0 MW)":{"mw": 38.0,  "xd": 0.14, "step_cap": 15.0}
 }
 
-# --- FUNCIONES MATEMÁTICAS (DEFINIDAS ANTES DE SU USO) ---
-
 def calc_avail(mtbf, mttr):
-    """Calcula disponibilidad A = MTBF / (MTBF + MTTR)"""
     if (mtbf + mttr) <= 0: return 0.0
     return mtbf / (mtbf + mttr)
 
+def get_unavailability(mtbf, mttr):
+    if (mtbf + mttr) <= 0: return 1.0
+    return mttr / (mtbf + mttr)
+
 def rel_k_out_n(n_needed, n_total, p_unit):
-    """Calcula confiabilidad de sistema redundante paralelo k-de-n"""
     if n_total < n_needed: return 0.0
     prob = 0.0
-    # Suma acumulativa de la PDF binomial
     for k in range(n_needed, n_total + 1):
         prob += binom.pmf(k, n_total, p_unit)
     return prob
 
 def get_n_for_reliability(n_needed, target_avail, p_unit_avail):
-    """Itera para encontrar el N total necesario para cumplir el Target"""
     for added_redundancy in range(0, 20):
         n_total = n_needed + added_redundancy
         prob = rel_k_out_n(n_needed, n_total, p_unit_avail)
@@ -75,14 +72,16 @@ def calc_sc_ka(mw_gen, xd, kv, n_gens):
 # ==============================================================================
 
 with st.sidebar:
-    st.title("Inputs v19.0")
+    st.title("Inputs v19.1")
     
     with st.expander("1. Project & Load", expanded=True):
         p_it = st.number_input("IT Load (MW)", 10.0, 500.0, 100.0)
         target_avail_pct = st.number_input("Target Availability (%)", 99.0, 99.99999, 99.999, format="%.5f")
         target_avail = target_avail_pct / 100.0
         
-        step_req_pct = st.number_input("Step Load Req (%)", 0.0, 100.0, 40.0)
+        # BRIDGE POWER MODE
+        st.info("🔋 **Mode: Bridge Power** (BESS covers 100% Load)")
+        bess_duration_min = st.number_input("Bridge Duration (min)", 1, 60, 5, help="Time BESS must hold full load before Gens take over.")
         
         volts_mode = st.selectbox("Voltage Selection", ["Auto-Calculate", "Manual"])
         manual_kv = 13.8
@@ -93,14 +92,10 @@ with st.sidebar:
         gen_model = st.selectbox("Generator Model", list(CAT_LIBRARY.keys()))
         gen_defaults = CAT_LIBRARY[gen_model]
         
-        st.info(f"**Selected:** {gen_model}")
-        
-        # Permitir editar X"d y Step Cap ya que no estaban en el CSV
         c1, c2 = st.columns(2)
         gen_xd = c1.number_input("Xd\" (pu)", 0.05, 0.5, gen_defaults['xd'])
+        # Step cap less relevant for Bridge Mode sizing but kept for reference
         gen_step_cap = c2.number_input("Step Cap (%)", 0.0, 100.0, gen_defaults['step_cap'])
-        
-        # Actualizar specs con valores editables
         gen_specs = {"mw": gen_defaults['mw'], "xd": gen_xd, "step_cap": gen_step_cap}
         
         st.caption("Reliability (IEEE 493)")
@@ -109,7 +104,6 @@ with st.sidebar:
 
     with st.expander("3. BESS Parameters"):
         bess_inv_mw = st.number_input("BESS Inverter Unit (MW)", 0.1, 10.0, 3.8)
-        bess_duration_min = st.number_input("Duration (min)", 1, 60, 5)
         st.caption("BESS Reliability")
         bess_mtbf = st.number_input("BESS MTBF (h)", 100, 50000, 8000)
         bess_mttr = st.number_input("BESS MTTR (h)", 1, 1000, 24)
@@ -120,7 +114,6 @@ with st.sidebar:
         bus_mttr = st.number_input("Bus MTTR (h)", 1, 1000, 12)
         cb_mtbf = st.number_input("Breaker MTBF (h)", 50000, 1000000, 300000)
         cb_mttr = st.number_input("Breaker MTTR (h)", 1, 100, 4)
-        
         bus_amp_limit = st.number_input("Bus Amp Limit (A)", 1000, 6000, 4000)
         sc_limit_ka = st.number_input("Short Circuit Limit (kA)", 25, 100, 63)
 
@@ -128,21 +121,17 @@ with st.sidebar:
 # 2. MAIN LOGIC FLOW
 # ==============================================================================
 
-st.title("🚜 CAT Topology Workflow v19.0")
+st.title("🚜 CAT Topology Workflow v19.1")
 
 # --- STEP 1: GENERATION SIZING ---
 st.markdown("### Step 1: Generation Fleet Sizing")
 
-# Load calc
-dc_aux = 15.0 # %
-dist_loss = 1.5 # %
-parasitics = 3.0 # %
+dc_aux = 15.0 
+dist_loss = 1.5 
+parasitics = 3.0 
 p_gross = (p_it * (1 + dc_aux/100)) / ((1 - dist_loss/100) * (1 - parasitics/100))
 
-# N Needed for Load
 n_needed_load = math.ceil(p_gross / gen_specs['mw'])
-
-# N Needed for Reliability
 p_gen_avail = calc_avail(gen_mtbf, gen_mttr)
 n_total_gens, gen_sys_rel = get_n_for_reliability(n_needed_load, target_avail, p_gen_avail)
 
@@ -151,155 +140,108 @@ c1.metric("Gross Load", f"{p_gross:.2f} MW")
 c2.metric("Gens Needed (Load)", f"{n_needed_load}")
 c3.metric("Gens Total (Reliability)", f"{n_total_gens} (N+{n_total_gens - n_needed_load})")
 
-st.markdown(f"<div class='step-box'>Generating System Reliability: <b>{gen_sys_rel*100:.6f}%</b> (Target: {target_avail_pct}%)</div>", unsafe_allow_html=True)
 
+# --- STEP 2: BESS SIZING (BRIDGE POWER LOGIC) ---
+st.markdown("### Step 2: BESS Sizing (Bridge Power)")
 
-# --- STEP 2: BESS SIZING ---
-st.markdown("### Step 2: BESS Sizing (Step Load)")
-
-# Fix: Use full load step requirement as BESS sizing basis (Conservative AI approach)
-step_mw = p_it * (step_req_pct / 100.0)
-n_bess_units = math.ceil(step_mw / bess_inv_mw)
+# Logic Change: BESS Sizing = 100% of Gross Load
+bess_target_mw = p_gross
+n_bess_units = math.ceil(bess_target_mw / bess_inv_mw)
 bess_installed_mw = n_bess_units * bess_inv_mw
 bess_energy_mwh = bess_installed_mw * (bess_duration_min / 60.0)
 
-# BESS Reliability (Assume N+1 internal redundancy for block reliability)
+# BESS Reliability (Assume N+1 block redundancy for critical bridge)
 n_bess_total_inst = n_bess_units + 1
 p_bess_avail = calc_avail(bess_mtbf, bess_mttr)
-# AHORA SÍ: La función rel_k_out_n está definida antes de llamarla
 bess_sys_rel = rel_k_out_n(n_bess_units, n_bess_total_inst, p_bess_avail)
 
 c1, c2, c3 = st.columns(3)
-c1.metric("Step Load Req", f"{step_mw:.1f} MW")
+c1.metric("Bridge Power Target", f"{bess_target_mw:.1f} MW (100% Load)")
 c2.metric("BESS Units (N+1)", f"{n_bess_total_inst} x {bess_inv_mw} MW")
-c3.metric("Energy", f"{bess_energy_mwh:.2f} MWh")
+c3.metric("Energy Storage", f"{bess_energy_mwh:.2f} MWh ({bess_duration_min} min)")
 
 
 # --- STEP 3: TOPOLOGY & VOLTAGE ---
 st.markdown("### Step 3: Voltage & Topology Analysis")
 
-# Auto-Voltage Logic
+# Auto-Voltage
 if volts_mode == "Manual":
     calc_kv = manual_kv
 else:
-    # Estimate Total Amps at generation to decide voltage
     raw_amps_13 = calc_amps(p_gross, 13.8)
-    if raw_amps_13 > 8000: 
+    if raw_amps_13 > 8000:
         calc_kv = 34.5
-        st.info("⚡ Auto-Logic: Selected **34.5 kV** due to high load (>8000A at 13.8kV).")
+        st.info("⚡ Auto-Logic: Selected **34.5 kV** (High Load).")
     else:
         calc_kv = 13.8
-        st.info("⚡ Auto-Logic: Selected **13.8 kV** (Standard distribution).")
+        st.info("⚡ Auto-Logic: Selected **13.8 kV**.")
 
-# Bus Splitting based on Amps
-total_amps_sys = calc_amps(n_total_gens * gen_specs['mw'], calc_kv)
-n_buses = math.ceil(total_amps_sys / bus_amp_limit)
-if n_buses < 2: n_buses = 2 
+# Reliability Analysis (Cut-Set)
+u_gen_unit = get_unavailability(gen_mtbf, gen_mttr)
+u_bus = get_unavailability(bus_mtbf, bus_mttr)
+u_cb = get_unavailability(cb_mtbf, cb_mttr)
 
-gens_per_bus = math.ceil(n_total_gens / n_buses)
-n_total_gens_final = gens_per_bus * n_buses 
-amps_per_bus = calc_amps(gens_per_bus * gen_specs['mw'], calc_kv)
+# --- Option A: Ring ---
+u_access_ring = u_cb + u_bus
+p_gen_effective_ring = 1.0 - (u_gen_unit + u_access_ring)
+n_ring, rel_ring = get_n_for_reliability(n_needed_load, target_avail, p_gen_effective_ring)
+total_rel_ring = rel_ring * bess_sys_rel
 
-c1, c2, c3 = st.columns(3)
-c1.metric("Selected Voltage", f"{calc_kv} kV")
-c2.metric("Number of Buses", f"{n_buses}")
-c3.metric("Amps per Bus", f"{amps_per_bus:.0f} A")
+# --- Option B: BaaH ---
+u_access_baah = (u_cb * u_cb) + (u_bus * u_cb) + (u_cb * u_bus) + (u_bus * u_bus)
+p_gen_effective_baah = 1.0 - (u_gen_unit + u_access_baah)
+n_baah, rel_baah = get_n_for_reliability(n_needed_load, target_avail, p_gen_effective_baah)
+total_rel_baah = rel_baah * bess_sys_rel
 
-# --- RELIABILITY CALCULATION (Ring vs BaaH) ---
-st.markdown("#### Reliability Check")
-
-p_bus = calc_avail(bus_mtbf, bus_mttr)
-p_cb = calc_avail(cb_mtbf, cb_mttr)
-
-# 1. Ring Topology (Split Bus)
-prob_all_buses = p_bus ** n_buses
-prob_gens_ok = rel_k_out_n(n_needed_load, n_total_gens_final, p_gen_avail) 
-
-# Consider N-1 Bus case
-prob_1_bus_fail = math.comb(n_buses, 1) * (1 - p_bus) * (p_bus**(n_buses-1))
-cap_n_1 = (n_total_gens_final - gens_per_bus) * gen_specs['mw']
-n_1_tolerant = cap_n_1 >= p_gross
-prob_rem_gens_ok = rel_k_out_n(n_needed_load, n_total_gens_final - gens_per_bus, p_gen_avail)
-
-topo_avail_ring = (prob_all_buses * prob_gens_ok) + (prob_1_bus_fail * prob_rem_gens_ok if n_1_tolerant else 0)
-total_avail_ring = topo_avail_ring * bess_sys_rel 
-
-ring_pass = total_avail_ring >= target_avail
-
-# 2. Breaker-and-a-Half (BaaH)
-# Reliability limited by Gen+Breaker chain (Bus is redundant)
-p_chain = p_gen_avail * p_cb 
-topo_avail_baah = rel_k_out_n(n_needed_load, n_total_gens_final, p_chain)
-total_avail_baah = topo_avail_baah * bess_sys_rel
-
-baah_pass = total_avail_baah >= target_avail
-
+# Selection
 final_topo = "Ring"
+final_n_gens = n_ring
 
-if ring_pass:
-    st.markdown(f"<div class='success-box'>✅ **Ring Topology** meets target! (Avail: {total_avail_ring*100:.6f}%)</div>", unsafe_allow_html=True)
+if total_rel_ring >= target_avail:
+    st.markdown(f"<div class='success-box'>✅ **Ring Topology** meets target! (Avail: {total_rel_ring*100:.6f}%)</div>", unsafe_allow_html=True)
 else:
-    st.markdown(f"<div class='fail-box'>❌ **Ring Topology** FAILED (Avail: {total_avail_ring*100:.6f}%). N-1 Tolerant: {n_1_tolerant}</div>", unsafe_allow_html=True)
-    st.write("...Checking Breaker-and-a-Half...")
-    if baah_pass:
-        st.markdown(f"<div class='success-box'>🚀 **Breaker-and-a-Half** meets target! (Avail: {total_avail_baah*100:.6f}%)</div>", unsafe_allow_html=True)
+    if total_rel_baah >= target_avail:
+        st.markdown(f"<div class='success-box'>🚀 **Breaker-and-a-Half** selected to meet target. (Ring Failed at {total_rel_ring*100:.6f}%)</div>", unsafe_allow_html=True)
         final_topo = "BaaH"
+        final_n_gens = n_baah
     else:
-        st.markdown(f"<div class='fail-box'>💀 **BaaH** also failed ({total_avail_baah*100:.6f}%). Check MTBF inputs or add more redundancy.</div>", unsafe_allow_html=True)
-        final_topo = "Failed"
+        st.markdown(f"<div class='fail-box'>💀 Target not met even with BaaH ({total_rel_baah*100:.6f}%). Using BaaH as best option.</div>", unsafe_allow_html=True)
+        final_topo = "BaaH"
+        final_n_gens = n_baah
 
-# --- STEP 4: SHORT CIRCUIT CHECK ---
-st.markdown("### Step 4: Physics Validation (Short Circuit)")
+# --- STEP 4: PHYSICS & DIAGRAM ---
+st.markdown("### Step 4: Validation & Layout")
 
-if final_topo != "Failed":
-    sc_ka = calc_sc_ka(gen_specs['mw'], gen_specs['xd'], calc_kv, n_total_gens_final)
-    
-    if sc_ka < sc_limit_ka:
-        st.markdown(f"<div class='success-box'>✅ Short Circuit **{sc_ka:.2f} kA** is within limit ({sc_limit_ka} kA).</div>", unsafe_allow_html=True)
-    else:
-        st.markdown(f"<div class='fail-box'>❌ Short Circuit **{sc_ka:.2f} kA** EXCEEDS limit. Recommendation: Increase Voltage or add Reactors.</div>", unsafe_allow_html=True)
-        
-    # --- DIAGRAM ---
-    st.markdown("### Final Architecture")
-    dot = graphviz.Digraph(rankdir='TB')
-    
-    if final_topo == "BaaH":
-        # Draw BaaH with 2 Main Buses
-        dot.node('A', 'Main Bus A', shape='rect', width='10', style='filled', fillcolor='black', fontcolor='white')
-        dot.node('B', 'Main Bus B', shape='rect', width='10', style='filled', fillcolor='black', fontcolor='white')
-        # Draw sample bays
-        for i in range(1, 4): 
-            with dot.subgraph(name=f'bay_{i}') as bay:
-                # 3 Breakers vertical
-                cb1 = f'CB_{i}_1'; cb2 = f'CB_{i}_2'; cb3 = f'CB_{i}_3'
-                bay.node(cb1, '', shape='square', width='0.5', style='filled', fillcolor='white')
-                bay.node(cb2, '', shape='square', width='0.5', style='filled', fillcolor='white')
-                bay.node(cb3, '', shape='square', width='0.5', style='filled', fillcolor='white')
-                
-                # Connections
-                dot.edge('A', cb1, dir='none')
-                dot.edge(cb1, cb2, dir='none')
-                dot.edge(cb2, cb3, dir='none')
-                dot.edge(cb3, 'B', dir='none')
-                
-                # Taps
-                bay.node(f'G{i}', 'Gens', shape='circle')
-                bay.edge(cb1, f'G{i}', label='Tap 1', dir='none')
-                
-                bay.node(f'L{i}', 'Load', shape='invtriangle')
-                bay.edge(cb2, f'L{i}', label='Tap 2', dir='none')
+sc_ka = calc_sc_ka(gen_specs['mw'], gen_specs['xd'], calc_kv, final_n_gens)
+if sc_ka < sc_limit_ka:
+    st.markdown(f"✅ Short Circuit **{sc_ka:.2f} kA** is OK (< {sc_limit_ka} kA)")
+else:
+    st.markdown(f"❌ Short Circuit **{sc_ka:.2f} kA** EXCEEDS limit. Try increasing voltage.")
 
-    else:
-        # Ring / Split Bus
-        with dot.subgraph(name='cluster_main') as c:
-            c.attr(style='invis')
-            for i in range(1, n_buses+1):
-                c.node(f'B{i}', f'Bus {i}\n{amps_per_bus:.0f}A', shape='rect', style='filled', fillcolor='#FFCD11')
-                c.node(f'G{i}', f'{gens_per_bus}x Gens', shape='folder')
-                c.edge(f'G{i}', f'B{i}')
-        # Ties
-        for i in range(1, n_buses+1):
-            nxt = i+1 if i < n_buses else 1
-            dot.edge(f'B{i}', f'B{nxt}', label='Tie')
+# Diagram
+dot = graphviz.Digraph(rankdir='TB')
+if final_topo == "BaaH":
+    dot.node('A', 'Main Bus A', shape='rect', width='10', style='filled', fillcolor='black', fontcolor='white')
+    dot.node('B', 'Main Bus B', shape='rect', width='10', style='filled', fillcolor='black', fontcolor='white')
+    # Draw Bays (Gen + BESS included in bays)
+    n_bays_draw = min(4, math.ceil((final_n_gens + n_bess_total_inst)/2))
+    for i in range(1, n_bays_draw + 1):
+        with dot.subgraph(name=f'bay_{i}') as bay:
+            bay.edge('A', f'CB{i}1', dir='none'); bay.edge(f'CB{i}1', f'CB{i}2', dir='none'); bay.edge(f'CB{i}2', f'CB{i}3', dir='none'); bay.edge(f'CB{i}3', 'B', dir='none')
+            bay.node(f'CB{i}1', shape='square'); bay.node(f'CB{i}2', shape='square'); bay.node(f'CB{i}3', shape='square')
+            bay.node(f'Source{i}', 'Gen/BESS', shape='circle')
+            bay.edge(f'CB{i}1', f'Source{i}', label='Tap', dir='none')
 
-    st.graphviz_chart(dot, use_container_width=True)
+else: # Ring
+    amps = calc_amps(final_n_gens * gen_specs['mw'], calc_kv)
+    n_bus = math.ceil(amps/bus_amp_limit)
+    if n_bus < 2: n_bus = 2
+    for i in range(1, n_bus+1):
+        dot.node(f'B{i}', f'Bus {i}', shape='rect', style='filled', fillcolor='#FFCD11')
+        dot.node(f'G{i}', 'Gens', shape='folder')
+        dot.edge(f'G{i}', f'B{i}')
+    for i in range(1, n_bus):
+        dot.edge(f'B{i}', f'B{i+1}', label='Tie')
+    dot.edge(f'B{n_bus}', 'B1', label='Tie')
+
+st.graphviz_chart(dot, use_container_width=True)
