@@ -6,7 +6,7 @@ import graphviz
 from scipy.stats import binom
 
 # --- PAGE CONFIG ---
-st.set_page_config(page_title="CAT Topology v19.0 (Library Fixed)", page_icon="🚜", layout="wide")
+st.set_page_config(page_title="CAT Topology v19.0 (Excel Library)", page_icon="🚜", layout="wide")
 
 # --- CSS ---
 st.markdown("""
@@ -303,4 +303,3 @@ if final_topo != "Failed":
             dot.edge(f'B{i}', f'B{nxt}', label='Tie')
 
     st.graphviz_chart(dot, use_container_width=True)
-    ```
