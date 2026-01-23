@@ -6,7 +6,7 @@ import graphviz
 from scipy.stats import binom
 
 # --- PAGE CONFIG ---
-st.set_page_config(page_title="CAT Topology v20.1 (Math Breakdown)", page_icon="🧮", layout="wide")
+st.set_page_config(page_title="CAT Topology v20.2 (Stable)", page_icon="🧮", layout="wide")
 
 # --- CSS ---
 st.markdown("""
@@ -75,7 +75,7 @@ def calc_sc_ka(mw_gen, xd, kv, n_gens):
 # ==============================================================================
 
 with st.sidebar:
-    st.title("Inputs v20.1")
+    st.title("Inputs v20.2")
     
     with st.expander("1. Project & Load", expanded=True):
         p_it = st.number_input("IT Load (MW)", 10.0, 500.0, 100.0)
@@ -120,8 +120,8 @@ with st.sidebar:
 # 2. CALCULATION ENGINE
 # ==============================================================================
 
-st.title("🚜 CAT Topology Workflow v20.1")
-st.caption("Includes Detailed Math Breakdown")
+st.title("🚜 CAT Topology Workflow v20.2")
+st.caption("Stable Release: Corrected Graphs + Math Breakdown")
 
 # --- STEP 1: LOAD & VOLTAGE ---
 dc_aux = 15.0; dist_loss = 1.5; parasitics = 3.0 
@@ -134,8 +134,6 @@ else:
     calc_kv = 34.5 if raw_amps_13 > 8000 else 13.8
 
 # --- STEP 2: BESS SIZING & RELIABILITY ---
-# We need BESS System Reliability to be high enough so it doesn't drag down the Total Avail.
-# Strategy: Target > 99.9999% for BESS subsystem alone so Gens are the bottleneck.
 target_bess_subsys = 0.999999 
 
 bess_target_mw = p_gross
@@ -149,7 +147,6 @@ bess_installed_mw = n_bess_total * bess_inv_mw
 bess_energy_mwh = bess_installed_mw * (bess_duration_min / 60.0)
 
 # --- STEP 3: GENERATION & TOPOLOGY (BAAH PRIORITY) ---
-# We prioritize BaaH math because Ring failed in previous steps for high targets.
 
 u_gen_unit = get_unavailability(gen_mtbf, gen_mttr)
 u_bus = get_unavailability(bus_mtbf, bus_mttr)
@@ -161,7 +158,7 @@ p_gen_effective_baah = 1.0 - (u_gen_unit + u_access_baah)
 
 n_gen_needed = math.ceil(p_gross / gen_specs['mw'])
 # Since Total = Gen_Sys * BESS_Sys, we need Gen_Sys >= Target / BESS_Sys
-target_gen_sys = target_avail / bess_rel_actual
+target_gen_sys = target_avail / bess_rel_actual if bess_rel_actual > 0 else target_avail
 
 n_gen_total, gen_sys_rel = get_n_for_reliability(n_gen_needed, target_gen_sys, p_gen_effective_baah)
 total_system_avail = gen_sys_rel * bess_rel_actual
@@ -210,7 +207,12 @@ with st.expander("🧮 CALCULATION BREAKDOWN (Why this result?)", expanded=True)
 
 # 3. DIAGRAM
 st.markdown("### Architecture Layout")
-dot = graphviz.Digraph(rankdir='TB')
+
+# --- CORRECCIÓN DE BUG AQUÍ ---
+dot = graphviz.Digraph() 
+dot.attr(rankdir='TB') # Ahora se asigna como atributo, no en constructor
+# ------------------------------
+
 dot.node('A', 'Bus A', shape='rect', width='10', style='filled', fillcolor='black', fontcolor='white')
 dot.node('B', 'Bus B', shape='rect', width='10', style='filled', fillcolor='black', fontcolor='white')
 
