@@ -69,9 +69,7 @@ def optimize_for_voltage(inputs, test_kv, p_gross_req, a_components):
     a_gen, a_bus, a_dist_path = a_components
     
     min_gens = math.ceil(p_gross_req / gen_rating_site)
-    best_sol = None
-    fail_reasons = []
-
+    
     # Search Loop
     for n_total in range(min_gens, min_gens + 40): # Fleet sizing
         for n_buses in range(2, 12): # Bus sizing
@@ -83,6 +81,8 @@ def optimize_for_voltage(inputs, test_kv, p_gross_req, a_components):
             bus_amp_load = gens_per_bus * i_nom_unit
             
             phy_pass = True
+            fail_reasons = [] # Reset reasons for this config
+            
             if i_sc_total > 63000: 
                 phy_pass = False
                 fail_reasons.append(f"KA_FAIL:{test_kv}kV")
@@ -123,7 +123,7 @@ def optimize_for_voltage(inputs, test_kv, p_gross_req, a_components):
                     'avail': total_avail, 'n_feeders': m_feeders
                 }, None
                 
-    return False, None, list(set(fail_reasons))
+    return False, None, ["Physical or Availability Limits"]
 
 # ==============================================================================
 # 3. MASTER SOLVER (Auto-Tier Logic)
@@ -272,10 +272,6 @@ if res['pass']:
              nxt = 1 if i == sol['n_buses'] else i+1
              dot.edge(f"B{i}", f"B{nxt}", label="Tie", dir="none")
         st.graphviz_chart(dot, use_container_width=True)
-        
-
-[Image of high voltage electrical substation switchgear]
-
 
 else:
     st.markdown('<div class="error-box">❌ <b>Optimization Failed:</b> No valid configuration found in any voltage tier. Check inputs.</div>', unsafe_allow_html=True)
