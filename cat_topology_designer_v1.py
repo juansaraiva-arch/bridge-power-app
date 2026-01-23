@@ -6,7 +6,7 @@ import graphviz
 from scipy.stats import binom
 
 # --- PAGE CONFIG ---
-st.set_page_config(page_title="CAT Topology v10.0 (AI-Step & ANSI SLD)", page_icon="⚡", layout="wide")
+st.set_page_config(page_title="CAT Topology v10.1 (Diagnostic + AI)", page_icon="⚡", layout="wide")
 
 # --- CSS ---
 st.markdown("""
@@ -15,6 +15,8 @@ st.markdown("""
         [data-testid="stSidebar"], [data-testid="stHeader"], footer, .stButton { display: none !important; }
         .block-container { padding: 0 !important; margin: 0 !important; }
     }
+    .error-box { background-color: #f8d7da; border: 1px solid #f5c6cb; padding: 15px; border-radius: 5px; color: #721c24; margin-bottom: 10px; }
+    .warning-box { background-color: #fff3cd; border: 1px solid #ffeeba; padding: 15px; border-radius: 5px; color: #856404; margin-bottom: 10px; }
     .success-box { background-color: #d4edda; border: 1px solid #c3e6cb; padding: 15px; border-radius: 5px; color: #155724; margin-bottom: 10px; }
     .kpi-card { background-color: #f8f9fa; padding: 10px; border-radius: 5px; text-align: center; border-left: 5px solid #2E86C1; box-shadow: 1px 1px 3px rgba(0,0,0,0.1); }
     .metric-value { font-size: 22px; font-weight: bold; }
@@ -44,11 +46,11 @@ def calc_sc(kv, mva, xd, n_par):
     return i_sc, i_base
 
 # ==============================================================================
-# 2. SOLVER (Included BESS Step Logic)
+# 2. SOLVER WITH DIAGNOSTICS
 # ==============================================================================
 
-def solve_topology_v10(inputs):
-    res = {'pass': False, 'log': []}
+def solve_topology_v10_1(inputs):
+    res = {'pass': False, 'log': [], 'diag': {'reasons': set(), 'best_attempt': None}}
     
     # Loads
     p_it = inputs['p_it']
@@ -69,50 +71,55 @@ def solve_topology_v10(inputs):
     if inputs['volts_mode'] == 'Auto-Recommend' and p_gross < 10: kv_list.insert(0, 4.16)
 
     final_sol = None
+    best_failed_attempt = None
     
+    # Track reasons across all attempts
+    fail_reasons_global = set()
+
     for kv in kv_list:
         min_gens = math.ceil(p_gross / gen_site_mw)
         
         # Loop Configs
-        for n_total in range(min_gens, min_gens + 40):
-            for n_buses in range(2, 10):
+        for n_total in range(min_gens, min_gens + 50):
+            for n_buses in range(2, 12):
                 per_bus = math.ceil(n_total / n_buses)
                 real_total = n_buses * per_bus
                 
-                # 1. Physics
+                current_fail_reasons = []
+                
+                # --- CHECK 1: PHYSICS ---
                 isc, i_nom = calc_sc(kv, gen_mva, inputs['gen_xd'], real_total)
                 bus_amps = per_bus * i_nom
                 
-                if isc > 63000 or bus_amps > 4000: continue
+                phy_pass = True
+                if isc > 63000: 
+                    phy_pass = False; current_fail_reasons.append(f"SC > 63kA ({isc/1000:.1f}kA)")
+                if bus_amps > 4000: 
+                    phy_pass = False; current_fail_reasons.append(f"Amps > 4000A ({bus_amps:.0f}A)")
                 
-                # 2. Fault Tolerance (N-1 Bus)
+                # --- CHECK 2: FAULT TOLERANCE ---
                 surviving_mw = (real_total - per_bus - 1) * gen_site_mw
-                if surviving_mw < p_gross: continue
+                tol_pass = surviving_mw >= p_gross
+                if not tol_pass: current_fail_reasons.append("N-1 Tolerance Fail")
                 
-                # 3. BESS & STEP LOAD LOGIC (CRITICAL)
+                # --- CHECK 3: BESS & STEP LOAD ---
                 step_req_mw = p_it * (inputs['step_req']/100.0)
-                # Gen Step Cap (Worst case: N-1 Bus condition)
-                gens_avail_step = real_total - per_bus
+                gens_avail_step = real_total - per_bus # Worst case step
                 gen_step_mw = gens_avail_step * gen_site_mw * (inputs['gen_step_cap']/100.0)
                 
                 bess_needed_mw = max(0, step_req_mw - gen_step_mw)
+                if inputs['bess_force']: bess_needed_mw = max(bess_needed_mw, inputs['bess_manual_mw'])
+                
                 n_bess_units = 0
                 bess_rel = 1.0
                 
-                if bess_needed_mw > 0 or inputs['bess_force']:
-                    if inputs['bess_force']: bess_needed_mw = max(bess_needed_mw, inputs['bess_manual_mw'])
+                if bess_needed_mw > 0:
                     n_bess_units = math.ceil(bess_needed_mw / inputs['bess_inv_mw'])
-                    
-                    # Distribute BESS
                     bess_per_bus = math.ceil(n_bess_units / n_buses)
                     n_bess_real = bess_per_bus * n_buses
-                    
-                    # BESS Reliability (k-out-of-n)
-                    # We need n_bess_units. We have n_bess_real.
                     bess_rel = rel_k_out_n(n_bess_units, n_bess_real, a_bess)
                 
-                # 4. System Reliability (Series)
-                # Gen Subsystem
+                # --- CHECK 4: RELIABILITY ---
                 n_load = math.ceil(p_gross / gen_site_mw)
                 p_bus_ok = a_bus ** n_buses
                 r_s0 = rel_k_out_n(n_load, real_total, a_gen)
@@ -120,47 +127,77 @@ def solve_topology_v10(inputs):
                 r_s1 = rel_k_out_n(n_load, real_total - per_bus, a_gen)
                 
                 gen_sys_rel = (p_bus_ok * r_s0) + (p_bus_fail * r_s1)
-                
-                # Total Avail = Gen_Sys * BESS_Sys * Dist_Sys
                 total_avail = gen_sys_rel * bess_rel * a_dist
                 
-                if total_avail >= (inputs['req_avail']/100.0):
-                    final_sol = {
-                        'n_buses': n_buses, 'n_total': real_total, 'per_bus': per_bus,
-                        'kv': kv, 'isc': isc, 'amps': bus_amps, 'avail': total_avail,
-                        'bess_active': (n_bess_units > 0), 'n_bess': n_bess_units if n_bess_units > 0 else 0,
-                        'bess_mw': bess_needed_mw, 'gen_step': gen_step_mw, 'req_step': step_req_mw,
-                        'load': p_gross
-                    }
+                avail_pass = total_avail >= (inputs['req_avail']/100.0)
+                if not avail_pass: current_fail_reasons.append(f"Avail Low ({total_avail*100:.5f}%)")
+
+                # --- RESULT EVALUATION ---
+                attempt_data = {
+                    'n_buses': n_buses, 'n_total': real_total, 'kv': kv,
+                    'avail': total_avail, 'isc': isc, 'amps': bus_amps,
+                    'reasons': current_fail_reasons, 'valid': False
+                }
+
+                if phy_pass and tol_pass and avail_pass:
+                    # SUCCESS
+                    attempt_data['valid'] = True
+                    attempt_data.update({
+                        'per_bus': per_bus, 'bess_active': (n_bess_units > 0),
+                        'n_bess': n_bess_units, 'bess_mw': bess_needed_mw,
+                        'gen_step': gen_step_mw, 'req_step': step_req_mw, 'load': p_gross
+                    })
+                    final_sol = attempt_data
                     break
+                
+                # Update Diagnostics (Best Failed Attempt)
+                # Logic: Prefer passing Physics > Passing Tol > Highest Avail
+                if not final_sol:
+                    update_best = False
+                    if best_failed_attempt is None: update_best = True
+                    else:
+                        # Score: Phy(100) + Tol(50) + Avail(0-1)
+                        curr_score = (100 if phy_pass else 0) + (50 if tol_pass else 0) + total_avail
+                        best_score = (100 if not any("kA" in r or "Amps" in r for r in best_failed_attempt['reasons']) else 0) + \
+                                     (50 if not any("Tolerance" in r for r in best_failed_attempt['reasons']) else 0) + \
+                                     best_failed_attempt['avail']
+                        if curr_score > best_score: update_best = True
+                    
+                    if update_best:
+                        best_failed_attempt = attempt_data
+                        
+                    for r in current_fail_reasons: fail_reasons_global.add(r)
+
             if final_sol: break
         if final_sol: break
         
     res['pass'] = (final_sol is not None)
     res['sol'] = final_sol
+    res['diag']['reasons'] = list(fail_reasons_global)
+    res['diag']['best_attempt'] = best_failed_attempt
     return res
 
 # ==============================================================================
 # 3. UI INPUTS
 # ==============================================================================
 
-if 'inputs_v10' not in st.session_state:
-    st.session_state['inputs_v10'] = {
+if 'inputs_v10_1' not in st.session_state:
+    st.session_state['inputs_v10_1'] = {
         'p_it': 100.0, 'dc_aux': 15.0, 'req_avail': 99.999, 'volts_mode': 'Auto-Recommend', 'volts_kv': 13.8,
         'step_req': 40.0, 'gen_rating': 2.5, 'gen_xd': 0.14, 'gen_step_cap': 25.0,
         'dist_loss': 1.5, 'gen_parasitic': 3.0, 'temp': 35, 'alt': 100,
         'bess_force': False, 'bess_manual_mw': 20.0, 'bess_inv_mw': 3.8,
-        # MTBF/MTTR
+        # MTBF/MTTR (Defaults IEEE)
         'gen_mtbf': 2000, 'gen_mttr': 24, 'bess_mtbf': 5000, 'bess_mttr': 48,
         'bus_mtbf': 500000, 'bus_mttr': 12, 'cb_mtbf': 300000, 'cb_mttr': 8,
         'tx_mtbf': 200000, 'tx_mttr': 72
     }
 
-def get(k): return st.session_state['inputs_v10'].get(k)
-def set_k(k, v): st.session_state['inputs_v10'][k] = v
+def get(k): return st.session_state['inputs_v10_1'].get(k)
+def set_k(k, v): st.session_state['inputs_v10_1'][k] = v
 
 with st.sidebar:
-    st.title("Inputs v10.0")
+    st.title("Inputs v10.1")
     with st.expander("1. Load & AI Step", expanded=True):
         st.number_input("IT Load (MW)", 1.0, 500.0, float(get('p_it')), key='p_it', on_change=lambda: set_k('p_it', st.session_state.p_it))
         st.number_input("Target Avail (%)", 90.0, 99.99999, float(get('req_avail')), format="%.5f", key='req_avail', on_change=lambda: set_k('req_avail', st.session_state.req_avail))
@@ -173,9 +210,7 @@ with st.sidebar:
         c1, c2 = st.columns(2)
         c1.number_input("Gen MTBF", value=int(get('gen_mtbf')), key='gen_mtbf', on_change=lambda: set_k('gen_mtbf', st.session_state.gen_mtbf))
         c2.number_input("Gen MTTR", value=int(get('gen_mttr')), key='gen_mttr', on_change=lambda: set_k('gen_mttr', st.session_state.gen_mttr))
-        c1.number_input("BESS MTBF", value=int(get('bess_mtbf')), key='bess_mtbf', on_change=lambda: set_k('bess_mtbf', st.session_state.bess_mtbf))
-        c2.number_input("BESS MTTR", value=int(get('bess_mttr')), key='bess_mttr', on_change=lambda: set_k('bess_mttr', st.session_state.bess_mttr))
-        st.caption("Standard IEEE 493 defaults loaded for Bus/Breakers.")
+        st.caption("Defaults loaded for Bus/BESS/Tx/CB.")
 
     with st.expander("3. Tech Specs"):
         c1, c2 = st.columns(2)
@@ -183,14 +218,14 @@ with st.sidebar:
         c2.number_input("Gen Step Cap %", value=float(get('gen_step_cap')), key='gen_step_cap', on_change=lambda: set_k('gen_step_cap', st.session_state.gen_step_cap))
         st.checkbox("Force BESS", value=get('bess_force'), key='bess_force', on_change=lambda: set_k('bess_force', st.session_state.bess_force))
 
-res = solve_topology_v10(st.session_state['inputs_v10'])
+res = solve_topology_v10_1(st.session_state['inputs_v10_1'])
 
 # ==============================================================================
-# 4. DASHBOARD & ANSI DIAGRAM
+# 4. DASHBOARD & DIAGNOSTICS
 # ==============================================================================
 
-st.title("CAT Topology Designer v10.0")
-st.subheader("AI-Ready Infrastructure (Step Load Analysis)")
+st.title("CAT Topology Designer v10.1")
+st.subheader("AI-Ready Infrastructure & Diagnostics")
 
 if res['pass']:
     sol = res['sol']
@@ -199,100 +234,71 @@ if res['pass']:
     c1, c2, c3, c4 = st.columns(4)
     c1.markdown(f'<div class="kpi-card"><div class="metric-value">{sol["avail"]*100:.6f}%</div><div class="metric-label">System Avail</div></div>', unsafe_allow_html=True)
     c2.markdown(f'<div class="kpi-card"><div class="metric-value">{sol["load"]:.1f} MW</div><div class="metric-label">Gross Load</div></div>', unsafe_allow_html=True)
-    c3.markdown(f'<div class="kpi-card"><div class="metric-value">{sol["n_buses"]}</div><div class="metric-label">Iso-Parallel Buses</div></div>', unsafe_allow_html=True)
+    c3.markdown(f'<div class="kpi-card"><div class="metric-value">{sol["n_buses"]}</div><div class="metric-label">Buses @ {sol["kv"]}kV</div></div>', unsafe_allow_html=True)
     c4.markdown(f'<div class="kpi-card"><div class="metric-value">{sol["bess_mw"]:.1f} MW</div><div class="metric-label">BESS Gap Fill</div></div>', unsafe_allow_html=True)
 
     st.divider()
     
-    # Step Load Report
-    st.markdown("### ⚡ AI Step Load Performance")
-    col_a, col_b = st.columns([1, 1])
-    with col_a:
-        st.write(f"**Required Step Load:** {sol['req_step']:.1f} MW")
-        st.write(f"**Generator Capability:** {sol['gen_step']:.1f} MW (Immediate pickup)")
-    with col_b:
-        if sol['bess_active']:
-            st.success(f"**BESS Support:** {sol['bess_mw']:.1f} MW provided by {sol['n_bess']} containers.")
-            st.caption("BESS is Critical for Availability.")
-        else:
-            st.info("Generators can handle the AI load step without BESS.")
-
     # ANSI DIAGRAM
-    st.markdown("### 📐 Single Line Diagram (ANSI/IEC Style)")
-    
     dot = graphviz.Digraph()
-    dot.attr(rankdir='TB', splines='ortho', nodesep='0.6', ranksep='0.6')
-    
-    # We want a horizontal bus layout.
-    # Graphviz hack: Use a subgraph with rank=same for buses
+    dot.attr(rankdir='TB', splines='ortho', nodesep='0.6')
     
     n_buses = sol['n_buses']
-    
-    # 1. DRAW BUSES (Aligned Horizontally)
-    with dot.subgraph(name='cluster_main_bus') as c:
+    # Drawing logic similar to v10 but concise
+    with dot.subgraph(name='cluster_main') as c:
         c.attr(style='invis')
         for i in range(1, n_buses + 1):
-            # BUS NODE (Visualized as a thick line using HTML label)
-            bus_label = f'''<<TABLE BORDER="0" CELLBORDER="0" CELLSPACING="0">
-                            <TR><TD BGCOLOR="black" WIDTH="150" HEIGHT="5"></TD></TR>
-                            <TR><TD>Bus {i} ({sol['kv']}kV)</TD></TR>
-                            </TABLE>>'''
-            c.node(f'Bus_{i}', label=bus_label, shape='none')
-    
-    # 2. DRAW COMPONENTS FOR EACH BUS
+            c.node(f'Bus_{i}', label=f'Bus {i}\n{sol["amps"]:.0f}A', shape='underline', width='2.5')
+            c.node(f'G_{i}', label='G', shape='circle')
+            c.edge(f'G_{i}', f'Bus_{i}')
+            if sol['bess_active']:
+                c.node(f'B_{i}', label='BESS', shape='box3d')
+                c.edge(f'Bus_{i}', f'B_{i}')
+            
+            c.node(f'F_{i}', label=f'Feeder {i}', shape='invtriangle')
+            c.edge(f'Bus_{i}', f'F_{i}')
+            
+    # Ring Ties
     for i in range(1, n_buses + 1):
-        bus_node = f'Bus_{i}'
-        
-        # Generator Group (Above Bus)
-        gen_node = f'G_{i}'
-        cb_gen_node = f'CB_G_{i}'
-        
-        dot.node(gen_node, label='G', shape='circle', width='0.6', fixedsize='true', style='bold')
-        dot.node(cb_gen_node, label='', shape='square', width='0.4', fixedsize='true', style='filled', fillcolor='white')
-        
-        # Edge Gen -> CB -> Bus
-        dot.edge(gen_node, cb_gen_node, dir='none')
-        dot.edge(cb_gen_node, bus_node, dir='none')
-        
-        # Feeder Group (Below Bus)
-        cb_feed_node = f'CB_F_{i}'
-        feed_node = f'F_{i}'
-        
-        dot.node(cb_feed_node, label='', shape='square', width='0.4', fixedsize='true', style='filled', fillcolor='white')
-        dot.node(feed_node, label=f'Feeder {i}', shape='invtriangle', style='filled', fillcolor='black', fontcolor='white')
-        
-        # Edge Bus -> CB -> Feeder
-        dot.edge(bus_node, cb_feed_node, dir='none')
-        dot.edge(cb_feed_node, feed_node, dir='none')
-        
-        # BESS (Side connection if active)
-        if sol['bess_active']:
-            bess_node = f'BESS_{i}'
-            cb_bess = f'CB_B_{i}'
-            dot.node(bess_node, label='BESS', shape='box3d')
-            dot.node(cb_bess, label='', shape='square', width='0.4', style='filled', fillcolor='white')
-            dot.edge(bus_node, cb_bess, dir='none')
-            dot.edge(cb_bess, bess_node, dir='none')
-
-    # 3. DRAW TIE BREAKERS (Between Buses)
-    # To force horizontal alignment, we link Bus_1 -> Tie -> Bus_2
-    # Constraint: rank=same is tricky with ortholines, let's try simple invisible edges for ordering
-    
-    for i in range(1, n_buses):
-        tie_cb = f'Tie_{i}_{i+1}'
-        dot.node(tie_cb, label='X', shape='square', width='0.4', fixedsize='true', style='bold')
-        
-        # Logic connection
-        dot.edge(f'Bus_{i}', tie_cb, dir='none', constraint='false') # Don't disturb rank
-        dot.edge(tie_cb, f'Bus_{i+1}', dir='none', constraint='false')
-        
-    # Closing the ring (Last to First) - Drawn as a long feedback line
-    tie_last = f'Tie_{n_buses}_1'
-    dot.node(tie_last, label='X', shape='square', width='0.4', fixedsize='true', style='bold')
-    dot.edge(f'Bus_{n_buses}', tie_last, dir='none', constraint='false')
-    dot.edge(tie_last, f'Bus_1', dir='none', constraint='false')
+        nxt = i + 1 if i < n_buses else 1
+        dot.edge(f'Bus_{i}', f'Bus_{nxt}', label='X', dir='none')
 
     st.graphviz_chart(dot, use_container_width=True)
 
 else:
-    st.error("No valid configuration found. Please check constraints.")
+    # --- FAILURE ANALYSIS ---
+    st.markdown('<div class="error-box">❌ <b>No Solution Found:</b> All configurations failed constraints.</div>', unsafe_allow_html=True)
+    
+    diag = res['diag']
+    best = diag['best_attempt']
+    reasons = diag['reasons']
+    
+    c1, c2 = st.columns(2)
+    
+    with c1:
+        st.markdown("### 🔍 Why did it fail?")
+        # Parse Reasons for Recommendations
+        if any("SC >" in r for r in reasons):
+            st.error(f"**Short Circuit Too High:** Found values > 63kA. \n\n*Recommendation:* Increase Voltage (try 34.5kV or 69kV).")
+        if any("Amps >" in r for r in reasons):
+            st.error(f"**Bus Current Too High:** Found values > 4000A. \n\n*Recommendation:* Increase Voltage or Split into more Buses.")
+        if any("Tolerance" in r for r in reasons):
+            st.warning("**N-1 Bus Tolerance Failed:** Generators too small relative to load.\n\n*Recommendation:* Use larger Generator Rating.")
+        if any("Avail Low" in r for r in reasons):
+            st.warning("**Availability Target Missed:** Even physically valid options didn't reach 99.999%.\n\n*Recommendation:* Improve MTTR (Response time) or add BESS redundancy.")
+
+    with c2:
+        if best:
+            st.markdown("### 📉 Best Failed Candidate")
+            st.write("This was the closest configuration:")
+            st.code(f"""
+            Voltage: {best['kv']} kV
+            Buses:   {best['n_buses']}
+            Total Gens: {best['n_total']}
+            
+            Short Circuit: {best['isc']/1000:.1f} kA
+            Availability:  {best['avail']*100:.5f} %
+            
+            FAILURE REASONS:
+            {', '.join(best['reasons'])}
+            """)
