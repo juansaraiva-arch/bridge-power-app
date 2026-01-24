@@ -5,7 +5,7 @@ import matplotlib.pyplot as plt
 from scipy.integrate import odeint
 
 # --- PAGE CONFIG ---
-st.set_page_config(page_title="CAT Hybrid Optimizer v5.3 (Auto-Size)", page_icon="🤖", layout="wide")
+st.set_page_config(page_title="CAT Hybrid Optimizer v5.4 (Complete)", page_icon="📊", layout="wide")
 
 # --- CSS ---
 st.markdown("""
@@ -37,8 +37,7 @@ CAT_LIBRARY = {
 # ==============================================================================
 
 with st.sidebar:
-    st.title("Inputs v5.3")
-    st.caption("Auto-Sizing Enabled")
+    st.title("Inputs v5.4")
     
     # --- TECHNICAL ---
     with st.expander("1. Project & Load", expanded=True):
@@ -46,7 +45,14 @@ with st.sidebar:
         dc_aux = st.number_input("Auxiliaries (%)", 0.0, 50.0, 15.0)
         base_load_pct = st.number_input("Base Load (%)", 10.0, 100.0, 50.0)
         step_req_pct = st.number_input("AI Spike (%)", 0.0, 100.0, 40.0)
-        pulse_duration = 5.0 
+        
+        # --- RESTORED: LOAD TYPE & DURATION ---
+        st.markdown("---")
+        load_type = st.radio("Load Pattern", ["Single Pulse (Inference)", "Step (Training)"])
+        if load_type == "Single Pulse (Inference)":
+            pulse_duration = st.number_input("Pulse Duration (s)", 0.5, 60.0, 5.0)
+        else:
+            pulse_duration = 9999.0 # Infinite step
 
     with st.expander("2. Generation Fleet"):
         gen_model = st.selectbox("Generator Model", list(CAT_LIBRARY.keys()))
@@ -63,8 +69,7 @@ with st.sidebar:
         enable_bess = st.checkbox("Enable BESS", value=True)
         step_mw = p_it * (step_req_pct/100.0)
         
-        # --- NUEVA LÓGICA: AUTO SIZE ---
-        auto_size_bess = st.checkbox("Auto-Size BESS for Optimization", value=True, help="If checked, Optimizer ignores the manual slider below and searches for the best size.")
+        auto_size_bess = st.checkbox("Auto-Size BESS (Optimizer)", value=True)
         
         if enable_bess:
             bess_cap_manual = st.number_input("Manual BESS Power (MW)", 0.0, 5000.0, step_mw, disabled=auto_size_bess)
@@ -100,18 +105,20 @@ def system_dynamics(y, t, params):
     Tau_g = max(params['Tau_g'], 0.05); Tau_b = max(params['Tau_b'], 0.02)
     P_spike = params['P_spike']; P_bess_cap = params['P_bess_cap']; Duration = params['Duration']
     
+    # 1. Load Profile (Dynamic Duration)
     p_elec_dev = P_spike if 1.0 <= t < (1.0 + Duration) else 0.0
     
+    # 2. BESS
     target_bess = 0.0
     if params['Bess_Enabled']:
         target_bess = min(P_bess_cap, p_elec_dev)
-    
     d_pbess_dt = (target_bess - p_bess_dev) / Tau_b
     
-    net_load_for_gov = p_elec_dev - p_bess_dev
-    target_mech = net_load_for_gov
-    d_pmech_dt = (target_mech - p_mech_dev) / Tau_g
+    # 3. Governor (Sees Net Load)
+    net_load = p_elec_dev - p_bess_dev
+    d_pmech_dt = (net_load - p_mech_dev) / Tau_g
     
+    # 4. Swing
     p_acc_mw = p_mech_dev + p_bess_dev - p_elec_dev
     f0 = 60.0
     d_freq_dt = (p_acc_mw / Sys_MVA) * (f0 / (2 * H))
@@ -127,56 +134,50 @@ def calculate_lcoe(n_gens, bess_mw, sim_stable, nadir_val):
     crf = (discount_rate * (1+discount_rate)**project_years) / ((1+discount_rate)**project_years - 1)
     capex_annual = total_capex * crf
     
+    # Fuel Cost
     load_mw_base = p_gross_total * (base_load_pct/100.0)
-    
-    if gen_cap_mw == 0: lf = 1.0 
-    else: lf = load_mw_base / gen_cap_mw
-    
+    lf = load_mw_base / max(0.1, gen_cap_mw)
     hr_penalty = 1.0 + 1.0 * ((1.0 - max(0.1, lf))**3) 
     hr_actual = specs['hr'] * hr_penalty
-    
-    fuel_cost_hr = load_mw_base * hr_actual * fuel_price 
-    fuel_annual = fuel_cost_hr * op_hours
+    fuel_annual = load_mw_base * hr_actual * fuel_price * op_hours
     
     om_annual = total_capex * 0.02
     total_mwh_year = load_mw_base * op_hours
-    lcoe = (capex_annual + fuel_annual + om_annual) / total_mwh_year
+    
+    lcoe_mwh = (capex_annual + fuel_annual + om_annual) / total_mwh_year
+    lcoe_kwh = lcoe_mwh / 1000.0 # Converted to $/kWh
     
     if not sim_stable:
         violation = max(0, nadir_limit - nadir_val) 
-        lcoe += 10000 + (violation * 1000)
+        lcoe_kwh += 10.0 + (violation * 1.0) # Penalty in $/kWh
         
-    return lcoe
+    return lcoe_kwh
 
 # ==============================================================================
-# 4. ROBUST OPTIMIZATION LOOP (AUTO-SIZE)
+# 4. OPTIMIZATION LOOP
 # ==============================================================================
 
 def run_optimization_robust():
     progress_text = "Running Auto-Sizing Optimization..."
     my_bar = st.progress(0, text=progress_text)
     
-    # 1. GENERATOR RANGE (Base Load -> Peak + Margin)
     mw_base = p_gross_total * (base_load_pct/100.0)
     mw_peak = p_gross_total * ((base_load_pct + step_req_pct)/100.0)
     
     n_min_base = int(np.ceil(mw_base / specs['mw']))
     n_min_peak = int(np.ceil(mw_peak / specs['mw']))
     
+    # Search Range
     n_start = max(1, n_min_base) 
     n_end = int(n_min_peak * 1.3) + 2
     n_range = range(n_start, n_end + 1)
     
-    # 2. BESS RANGE (SMART LOGIC)
-    # If Auto-Size: Search from 0 to 1.5x the Spike Magnitude
-    # If Manual: Use only the user value (0 or Manual)
-    
+    # BESS Range
     if auto_size_bess and enable_bess:
         bess_max_search = step_mw * 1.5 
-        # Create a grid of ~8 points to keep it fast
         b_range = np.linspace(0, bess_max_search, 8)
     elif enable_bess:
-        b_range = [0.0, bess_cap_manual] # Compare None vs Manual
+        b_range = [0.0, bess_cap_manual]
     else:
         b_range = [0.0]
     
@@ -193,7 +194,6 @@ def run_optimization_robust():
                 'Bess_Enabled': True, 'Duration': pulse_duration
             }
             
-            # Physics
             t = np.linspace(0, 10, 200)
             try:
                 sol = odeint(system_dynamics, [0,0,0], t, args=(sim_p,))
@@ -204,17 +204,15 @@ def run_optimization_robust():
             except:
                 is_stable = False; nadir=0; peak=99
             
-            # Economics
             cost = calculate_lcoe(n, b_mw, is_stable, nadir)
             lcoe_clean = cost
             if not is_stable:
-                 lcoe_clean = cost - (10000 + (max(0, nadir_limit - nadir) * 1000))
+                 lcoe_clean = cost - (10.0 + (max(0, nadir_limit - nadir) * 1.0))
             
-            # Capacity Hard Check
             total_cap = (n * specs['mw']) + b_mw
             if total_cap < mw_peak:
                 is_stable = False
-                cost += 5000
+                cost += 5.0
             
             results.append({
                 "Gens": n, "BESS_MW": b_mw, "Stable": is_stable, 
@@ -229,41 +227,83 @@ def run_optimization_robust():
     return pd.DataFrame(results)
 
 # ==============================================================================
-# 5. UI
+# 5. UI DISPLAY
 # ==============================================================================
 
-st.title("⚡ CAT Hybrid Optimizer v5.3")
-st.markdown("**Status:** Auto-Sizing Enabled. Finding the economic sweet spot.")
+st.title("⚡ CAT Hybrid Optimizer v5.4")
+st.markdown("**Status:** Full Physics & Economics Enabled.")
 
 tab1, tab2 = st.tabs(["🚀 Single Simulation", "💰 Global Optimization"])
 
+# --- TAB 1: PHYSICS VISUALIZATION ---
 with tab1:
     bess_val_tab1 = bess_cap_manual if enable_bess else 0.0
-    if st.button("Run Single Check", type="primary"):
+    
+    if st.button("Run Simulation Analysis", type="primary"):
         sys_mva = (n_gens_op * specs['mw']) / 0.8
         sim_params = {
             'H': h_const, 'Tau_g': tau_gov, 'Tau_b': bess_response / 1000.0,
             'P_spike': step_mw, 'P_bess_cap': bess_val_tab1, 'Sys_MVA': sys_mva,
             'Bess_Enabled': enable_bess, 'Duration': pulse_duration
         }
-        t = np.linspace(0, 15, 1000)
+        
+        # Simulate longer to see pulse end
+        t_end = max(15.0, pulse_duration + 5.0)
+        t = np.linspace(0, t_end, 1500)
+        
         sol = odeint(system_dynamics, [0,0,0], t, args=(sim_params,))
         freq = 60.0 + sol[:, 0]
         nadir = np.min(freq)
         
+        # Reconstruct Power Traces for Plotting
+        mw_base = p_gross_total * (base_load_pct/100.0)
+        p_mech = mw_base + sol[:, 1]
+        p_bess = sol[:, 2]
+        p_load = [mw_base + (step_mw if 1.0 <= ti < (1.0 + pulse_duration) else 0) for ti in t]
+        
         c1, c2 = st.columns([3, 1])
         with c1:
-            fig, ax = plt.subplots(figsize=(10, 4))
-            ax.plot(t, freq, label="Freq"); ax.axhline(nadir_limit, color='r', linestyle='--')
-            ax.set_title(f"Nadir: {nadir:.3f} Hz"); ax.grid(True, alpha=0.3); st.pyplot(fig)
+            fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(10, 8), sharex=True)
+            
+            # Ax1: Frequency
+            ax1.plot(t, freq, label="Freq", color='blue')
+            ax1.axhline(nadir_limit, color='red', linestyle='--', label="Trip")
+            if pulse_duration < 100:
+                ax1.axvspan(1.0, 1.0+pulse_duration, color='gray', alpha=0.1, label="Pulse")
+            ax1.set_ylabel("Freq (Hz)"); ax1.grid(True, alpha=0.3); ax1.legend(loc='upper right')
+            ax1.set_title(f"Frequency Response (Nadir: {nadir:.2f} Hz)")
+            
+            # Ax2: Power (RESTORED)
+            ax2.plot(t, p_load, 'k--', label="Total Load", linewidth=1.5)
+            ax2.plot(t, p_mech, 'g-', label="Gens (Mech)", linewidth=2)
+            if enable_bess:
+                ax2.plot(t, p_bess, 'm-', label="BESS (Inj)", linewidth=2)
+                # Show Total Supply
+                p_total = p_mech + p_bess
+                ax2.plot(t, p_total, 'r:', label="Total Supply", alpha=0.5)
+            
+            ax2.set_ylabel("Power (MW)"); ax2.set_xlabel("Time (s)")
+            ax2.grid(True, alpha=0.3); ax2.legend(loc='center right')
+            
+            st.pyplot(fig)
+            
         with c2:
             is_stable = (nadir >= nadir_limit)
             lcoe = calculate_lcoe(n_gens_op, bess_val_tab1, is_stable, nadir)
-            real_lcoe = lcoe if is_stable else lcoe - (10000 + (max(0, nadir_limit - nadir) * 1000))
-            st.metric("LCOE", f"${real_lcoe:.2f}/MWh")
-            if is_stable: st.success("STABLE")
-            else: st.error("TRIP")
+            # Clean LCOE
+            real_lcoe = lcoe if is_stable else lcoe - (10.0 + (max(0, nadir_limit - nadir) * 1.0))
+            
+            st.metric("LCOE", f"${real_lcoe:.3f}/kWh")
+            st.metric("Nadir", f"{nadir:.3f} Hz")
+            
+            if is_stable: 
+                st.success("STABLE")
+            else: 
+                st.error("TRIP")
+                if not enable_bess:
+                    st.info("💡 Tip: Enable BESS to absorb the load spike.")
 
+# --- TAB 2: OPTIMIZER ---
 with tab2:
     if st.button("🔎 Run Optimizer"):
         df_opt = run_optimization_robust()
@@ -276,22 +316,17 @@ with tab2:
             c1, c2, c3 = st.columns(3)
             c1.metric("Optimal Generators", f"{int(best['Gens'])} Units", f"{gen_model}")
             c2.metric("Optimal BESS", f"{best['BESS_MW']:.1f} MW", "Peak Shaving")
-            c3.metric("Lowest LCOE", f"${best['LCOE']:.2f}/MWh", "Optimized")
+            c3.metric("Lowest LCOE", f"${best['LCOE']:.3f}/kWh", "Optimized")
             
             # Battle Card
             df_gen_only = df_opt[(df_opt['BESS_MW'] == 0) & (df_opt['Stable'] == True)].sort_values("LCOE_Penalized")
             st.write("---")
-            st.subheader("⚔️ Hybrid vs. Traditional")
             
             if not df_gen_only.empty:
                 gen_best = df_gen_only.iloc[0]
                 diff = gen_best['LCOE'] - best['LCOE']
-                
-                col_a, col_b = st.columns(2)
-                with col_a:
-                    st.info(f"**Traditional:** {int(gen_best['Gens'])} Gens @ ${gen_best['LCOE']:.2f}/MWh")
-                with col_b:
-                    st.success(f"**Hybrid:** {int(best['Gens'])} Gens + {best['BESS_MW']:.1f}MW BESS @ ${best['LCOE']:.2f}/MWh\n\n**Savings:** {diff:.2f} $/MWh")
+                st.info(f"**Traditional:** {int(gen_best['Gens'])} Gens @ ${gen_best['LCOE']:.3f}/kWh")
+                st.success(f"**Hybrid:** {int(best['Gens'])} Gens + {best['BESS_MW']:.1f}MW BESS @ ${best['LCOE']:.3f}/kWh\n\n**Savings:** ${diff:.3f}/kWh")
             else:
                 st.warning("Only Hybrid configurations can stabilize this load.")
             
@@ -301,7 +336,7 @@ with tab2:
             unstable = df_opt[~df_opt['Stable']]
             ax.scatter(unstable['Gens'], unstable['BESS_MW'], c='lightgray', marker='x', alpha=0.5, label='Trip')
             sc = ax.scatter(stable['Gens'], stable['BESS_MW'], c=stable['LCOE'], cmap='viridis_r', s=100, edgecolors='k')
-            plt.colorbar(sc, label='LCOE ($/MWh)')
+            plt.colorbar(sc, label='LCOE ($/kWh)')
             ax.scatter(best['Gens'], best['BESS_MW'], c='red', s=300, marker='*', label='Optimal')
             ax.set_xlabel("Generators"); ax.set_ylabel("BESS (MW)"); ax.legend(); st.pyplot(fig)
         else:
