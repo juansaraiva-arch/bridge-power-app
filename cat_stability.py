@@ -5,7 +5,7 @@ import matplotlib.pyplot as plt
 from scipy.integrate import odeint
 
 # --- PAGE CONFIG ---
-st.set_page_config(page_title="CAT Hybrid Optimizer v5.5 (Stable UI)", page_icon="⚡", layout="wide")
+st.set_page_config(page_title="CAT Hybrid Optimizer v5.6 (Clear Plot)", page_icon="🎯", layout="wide")
 
 # --- CSS (SCOPED TO AVOID CONFLICTS) ---
 st.markdown("""
@@ -66,7 +66,7 @@ CAT_LIBRARY = {
 # ==============================================================================
 
 with st.sidebar:
-    st.title("Inputs v5.5")
+    st.title("Inputs v5.6")
     
     # --- TECHNICAL ---
     with st.expander("1. Project & Load", expanded=True):
@@ -190,7 +190,6 @@ def run_optimization_robust():
     n_min_base = int(np.ceil(mw_base / specs['mw']))
     n_min_peak = int(np.ceil(mw_peak / specs['mw']))
     
-    # Search Range
     n_start = max(1, n_min_base) 
     n_end = int(n_min_peak * 1.3) + 2
     n_range = range(n_start, n_end + 1)
@@ -252,8 +251,8 @@ def run_optimization_robust():
 # 5. UI DISPLAY
 # ==============================================================================
 
-st.title("⚡ CAT Hybrid Optimizer v5.5")
-st.markdown("**Status:** UI Stabilized. Physics & Economics Enabled.")
+st.title("⚡ CAT Hybrid Optimizer v5.6")
+st.markdown("**Status:** Full Physics & Economics Enabled.")
 
 tab1, tab2 = st.tabs(["🚀 Single Simulation", "💰 Global Optimization"])
 
@@ -281,7 +280,6 @@ with tab1:
         p_bess = sol[:, 2]
         p_load = [mw_base + (step_mw if 1.0 <= ti < (1.0 + pulse_duration) else 0) for ti in t]
         
-        # --- FIX: COLUMN WIDTH RATIO [2, 1] for Stability ---
         c1, c2 = st.columns([2, 1])
         
         with c1:
@@ -306,7 +304,6 @@ with tab1:
             st.pyplot(fig)
             
         with c2:
-            # --- FIX: USE CONTAINER TO PREVENT JITTER ---
             with st.container(border=True):
                 st.subheader("Results")
                 
@@ -314,7 +311,6 @@ with tab1:
                 lcoe = calculate_lcoe(n_gens_op, bess_val_tab1, is_stable, nadir)
                 real_lcoe = lcoe if is_stable else lcoe - (10.0 + (max(0, nadir_limit - nadir) * 1.0))
                 
-                # Standard Metrics (Stable Font)
                 st.metric("LCOE", f"${real_lcoe:.3f}/kWh")
                 st.metric("Nadir", f"{nadir:.3f} Hz")
                 st.metric("Spike Load", f"{step_mw:.1f} MW")
@@ -336,7 +332,6 @@ with tab2:
         if not df_viable.empty:
             best = df_viable.iloc[0]
             
-            # --- RESULTS LAYOUT ---
             st.markdown(f"### ✅ Optimal Configuration Found")
             
             col_res1, col_res2, col_res3 = st.columns(3)
@@ -376,14 +371,27 @@ with tab2:
             else:
                 st.warning("Only Hybrid configurations can stabilize this load.")
             
-            # Map
+            # --- MAP FIX: External Legend ---
+            st.markdown("### 🗺️ Landscape Analysis")
             fig, ax = plt.subplots(figsize=(10, 6))
             stable = df_opt[df_opt['Stable']]
             unstable = df_opt[~df_opt['Stable']]
-            ax.scatter(unstable['Gens'], unstable['BESS_MW'], c='lightgray', marker='x', alpha=0.5, label='Trip')
-            sc = ax.scatter(stable['Gens'], stable['BESS_MW'], c=stable['LCOE'], cmap='viridis_r', s=100, edgecolors='k')
-            plt.colorbar(sc, label='LCOE ($/kWh)')
-            ax.scatter(best['Gens'], best['BESS_MW'], c='red', s=300, marker='*', label='Optimal')
-            ax.set_xlabel("Generators"); ax.set_ylabel("BESS (MW)"); ax.legend(); st.pyplot(fig)
+            
+            # Scatter Plots
+            ax.scatter(unstable['Gens'], unstable['BESS_MW'], c='lightgray', marker='x', alpha=0.5, label='Trip (Unstable)')
+            sc = ax.scatter(stable['Gens'], stable['BESS_MW'], c=stable['LCOE'], cmap='viridis_r', s=100, edgecolors='k') # No label for data points
+            ax.scatter(best['Gens'], best['BESS_MW'], c='red', s=300, marker='*', label='Optimal Configuration', zorder=10)
+            
+            cbar = plt.colorbar(sc, ax=ax)
+            cbar.set_label('LCOE ($/kWh)')
+            
+            ax.set_xlabel("Generators (Units)")
+            ax.set_ylabel("BESS Capacity (MW)")
+            ax.grid(True, alpha=0.3)
+            
+            # --- LEGEND BELOW THE CHART ---
+            ax.legend(loc='upper center', bbox_to_anchor=(0.5, -0.15), ncol=3, frameon=False)
+            
+            st.pyplot(fig)
         else:
             st.error("No stable configuration found.")
