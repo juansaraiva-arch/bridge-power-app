@@ -4,3 +4,4 @@ numpy
 graphviz
 plotly
 scipy
+matplotlib
