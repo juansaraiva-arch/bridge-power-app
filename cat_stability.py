@@ -5,7 +5,7 @@ import matplotlib.pyplot as plt
 from scipy.integrate import odeint
 
 # --- PAGE CONFIG ---
-st.set_page_config(page_title="CAT Stability Sim v3.1 (Pulse Dynamics)", page_icon="💓", layout="wide")
+st.set_page_config(page_title="CAT Stability Sim v3.2 (Overshoot)", page_icon="📉", layout="wide")
 
 # --- CSS ---
 st.markdown("""
@@ -20,15 +20,17 @@ st.markdown("""
 # ==============================================================================
 # 1. DATA LIBRARY
 # ==============================================================================
+# Ajusté los valores de Tau (Governor Response) para que sean un poco más lentos (realistas)
+# y así provocar el overshoot visible si no hay baterías.
 CAT_LIBRARY = {
-    "XGC1900 (1.9 MW)":   {"mw": 1.9,   "type": "Recip",   "h_def": 1.0},
-    "G3520FR (2.5 MW)":   {"mw": 2.5,   "type": "Recip",   "h_def": 1.0},
-    "G3520K (2.4 MW)":    {"mw": 2.4,   "type": "Recip",   "h_def": 1.0},
-    "CG260 (3.96 MW)":    {"mw": 3.957, "type": "Recip",   "h_def": 1.2},
-    "G20CM34 (9.76 MW)":  {"mw": 9.76,  "type": "Recip",   "h_def": 1.5},
-    "Titan 130 (16.5 MW)":{"mw": 16.5,  "type": "Turbine", "h_def": 4.0},
-    "Titan 250 (23.2 MW)":{"mw": 23.2,  "type": "Turbine", "h_def": 4.5},
-    "Titan 350 (38.0 MW)":{"mw": 38.0,  "type": "Turbine", "h_def": 5.0}
+    "XGC1900 (1.9 MW)":   {"mw": 1.9,   "type": "Recip",   "h_def": 1.0, "tau_def": 0.5},
+    "G3520FR (2.5 MW)":   {"mw": 2.5,   "type": "Recip",   "h_def": 1.0, "tau_def": 0.6},
+    "G3520K (2.4 MW)":    {"mw": 2.4,   "type": "Recip",   "h_def": 1.0, "tau_def": 0.6},
+    "CG260 (3.96 MW)":    {"mw": 3.957, "type": "Recip",   "h_def": 1.2, "tau_def": 0.8},
+    "G20CM34 (9.76 MW)":  {"mw": 9.76,  "type": "Recip",   "h_def": 1.5, "tau_def": 1.0},
+    "Titan 130 (16.5 MW)":{"mw": 16.5,  "type": "Turbine", "h_def": 4.0, "tau_def": 1.5},
+    "Titan 250 (23.2 MW)":{"mw": 23.2,  "type": "Turbine", "h_def": 4.5, "tau_def": 2.0},
+    "Titan 350 (38.0 MW)":{"mw": 38.0,  "type": "Turbine", "h_def": 5.0, "tau_def": 2.5}
 }
 
 # ==============================================================================
@@ -36,22 +38,23 @@ CAT_LIBRARY = {
 # ==============================================================================
 
 with st.sidebar:
-    st.title("Inputs v3.1 (AI Dynamics)")
+    st.title("Inputs v3.2")
+    st.caption("Focus: Overshoot & Recoil Physics")
     
     with st.expander("1. Project & Load", expanded=True):
         p_it = st.number_input("IT Load (MW)", 1.0, 5000.0, 100.0) 
         dc_aux = st.number_input("Auxiliaries & Cooling (%)", 0.0, 50.0, 15.0)
         
-        st.markdown('<div class="section-header">AI Load Behavior</div>', unsafe_allow_html=True)
+        st.markdown('<div class="section-header">AI Pulse Profile</div>', unsafe_allow_html=True)
         base_load_pct = st.number_input("Base Load (%)", 10.0, 100.0, 50.0)
         step_req_pct = st.number_input("AI Spike Peak (%)", 0.0, 100.0, 40.0)
         
-        # --- NEW PARAMETERS: DURATION & TYPE ---
-        load_type = st.radio("Fluctuation Type", ["Single Pulse (Spike)", "Step (Permanent)"])
-        if load_type == "Single Pulse (Spike)":
-            pulse_duration = st.number_input("Spike Duration (s)", 0.1, 10.0, 2.0, help="Typical Inference/Checkpoint duration.")
+        # Scenario Selector
+        load_type = st.radio("Load Pattern", ["Single Pulse (Inference)", "Step (Training)"])
+        if load_type == "Single Pulse (Inference)":
+            pulse_duration = st.number_input("Pulse Duration (s)", 0.5, 20.0, 3.0, help="Short pulses cause governor overshoot.")
         else:
-            pulse_duration = 999.0 # Effectively infinite
+            pulse_duration = 999.0
 
     with st.expander("2. Generation Fleet", expanded=True):
         gen_model = st.selectbox("Generator Model", list(CAT_LIBRARY.keys()))
@@ -64,12 +67,12 @@ with st.sidebar:
         
         n_gens_op = st.number_input("Operating Units (N)", 1, MAX_GENS_HARD_LIMIT, n_default_safe)
         
-        st.markdown('<div class="section-header">Dynamic Parameters</div>', unsafe_allow_html=True)
-        h_const = st.number_input("Inertia Constant H (s)", 0.1, 20.0, float(specs['h_def']))
-        tau_gov = st.number_input("Governor Response (s)", 0.05, 10.0, 0.5)
+        st.markdown('<div class="section-header">Physics Parameters</div>', unsafe_allow_html=True)
+        h_const = st.number_input("Inertia H (s)", 0.1, 20.0, float(specs['h_def']))
+        tau_gov = st.number_input("Governor Lag (s)", 0.05, 10.0, float(specs.get('tau_def', 0.5)), help="Higher lag = Worse overshoot.")
 
-    with st.expander("3. BESS System"):
-        bess_mode = st.selectbox("Control Mode", ["Grid Forming", "Disabled"])
+    with st.expander("3. BESS Mitigation"):
+        bess_mode = st.selectbox("Control Mode", ["Grid Forming (Active)", "Disabled"])
         if bess_mode != "Disabled":
             step_mw = p_it * (step_req_pct/100.0)
             bess_cap = st.number_input("BESS Power (MW)", 0.0, 5000.0, step_mw)
@@ -78,50 +81,55 @@ with st.sidebar:
             bess_cap = 0.0
             bess_response = 1000
 
-    with st.expander("4. Criteria"):
-        nadir_limit = st.number_input("Min Freq (Hz)", 40.0, 59.9, 57.0)
-        overshoot_limit = st.number_input("Max Freq (Hz)", 60.1, 70.0, 63.0, help="High frequency trip limit.")
+    with st.expander("4. Safety Limits"):
+        nadir_limit = st.number_input("Min Freq (Hz)", 50.0, 59.9, 57.0)
+        overshoot_limit = st.number_input("Max Freq (Hz)", 60.1, 70.0, 63.0)
 
 # ==============================================================================
-# 3. PHYSICS ENGINE (UPDATED FOR PULSES)
+# 3. PHYSICS ENGINE (OVERSHOOT LOGIC)
 # ==============================================================================
 
-def system_dynamics_pulse(y, t, params):
+def system_dynamics_overshoot(y, t, params):
     freq_dev, p_mech_dev, p_bess_dev = y
     
-    # Unpack
+    # Physics Constants
     H = max(params['H'], 0.1) 
     Sys_MVA = max(params['Sys_MVA'], 0.1)
-    Tau_g = max(params['Tau_g'], 0.02)
+    Tau_g = max(params['Tau_g'], 0.05) # Minimum 50ms lag for mechanical physics
     Tau_b = max(params['Tau_b'], 0.02)
     
     P_spike = params['P_spike']
     P_bess_cap = params['P_bess_cap']
     Duration = params['Duration']
     
-    # 1. Electrical Load Profile (PULSE LOGIC)
-    # Load rises at t=1.0 and falls at t=1.0+Duration
+    # 1. LOAD: Rectangular Pulse
     if 1.0 <= t < (1.0 + Duration):
         p_elec_dev = P_spike
     else:
         p_elec_dev = 0.0
         
-    # 2. Governor (Mechanical Power)
+    # 2. GOVERNOR: The "Memory" Effect
+    # The mechanical power tries to chase the electrical load, but it's SLOW (Tau_g).
+    # When load drops to 0, p_mech_dev is still high -> Acceleration!
     target_mech = p_elec_dev 
     d_pmech_dt = (target_mech - p_mech_dev) / Tau_g
     
-    # 3. BESS Response
+    # 3. BESS: Fast Response
+    # If BESS is enabled, it chases the load almost instantly (Grid Forming).
+    # This means p_bess_dev covers the spike, so the Governor (p_mech) DOESN'T HAVE TO SEE IT.
+    # If p_mech doesn't rise, there's no momentum to cause overshoot when load drops.
     target_bess = 0.0
     if params['Bess_Enabled']:
-        # If load is high, inject. If load drops, stop injecting.
-        # Simple logic: follow the load dev, capped by rating
-        req_bess = p_elec_dev 
-        target_bess = min(P_bess_cap, req_bess)
+        target_bess = min(P_bess_cap, p_elec_dev) # Chases load directly
         
     d_pbess_dt = (target_bess - p_bess_dev) / Tau_b
     
-    # 4. Swing Equation
+    # 4. SWING EQUATION
+    # P_acc = (P_mech + P_bess) - P_elec
+    # Scenario A (No BESS): P_mech rises slow (Nadir). Load drops. P_mech high, P_elec low -> P_acc positive -> Overshoot.
+    # Scenario B (With BESS): P_bess rises fast. P_mech stays near 0. Load drops. P_bess drops fast. P_acc near 0 -> Stable.
     p_acc_mw = p_mech_dev + p_bess_dev - p_elec_dev
+    
     f0 = 60.0
     d_freq_dt = (p_acc_mw / Sys_MVA) * (f0 / (2 * H))
     
@@ -131,8 +139,8 @@ def system_dynamics_pulse(y, t, params):
 # 4. SIMULATION EXECUTION
 # ==============================================================================
 
-st.title("⚡ CAT Stability Sim v3.1 (Pulse Analysis)")
-st.markdown(f"**Scenario:** {load_type} of {step_req_pct}% Load")
+st.title("⚡ CAT Stability Sim v3.2")
+st.markdown(f"**Scenario:** {load_type} | **Gen Model:** {gen_model} (Tau={specs.get('tau_def',0.5)}s)")
 
 # Stats
 total_gen_cap_mw = n_gens_op * specs['mw']
@@ -145,7 +153,7 @@ c1.metric("System Inertia", f"{sys_mva * h_const:.1f} MWs")
 c2.metric("Spike Magnitude", f"{mw_step:.1f} MW")
 c3.metric("Spike Duration", f"{pulse_duration} s" if pulse_duration < 900 else "Infinite")
 
-if st.button("🚀 Run Pulse Simulation", type="primary"):
+if st.button("🚀 Run Simulation", type="primary"):
     
     sim_params = {
         'H': h_const,
@@ -158,16 +166,18 @@ if st.button("🚀 Run Pulse Simulation", type="primary"):
         'Duration': pulse_duration
     }
     
-    t_end = 15.0 
-    t = np.linspace(0, t_end, 1500)
+    # Run longer sim to see the recovery after pulse
+    t_end = max(15.0, pulse_duration + 10.0)
+    t = np.linspace(0, t_end, 2000)
     y0 = [0.0, 0.0, 0.0]
     
     try:
-        sol = odeint(system_dynamics_pulse, y0, t, args=(sim_params,))
+        sol = odeint(system_dynamics_overshoot, y0, t, args=(sim_params,))
         
         freq_trace = 60.0 + sol[:, 0]
         p_mech_trace = mw_base + sol[:, 1]
         p_bess_trace = sol[:, 2]
+        # Reconstruct Load Trace for Plotting
         p_load_trace = [mw_base + (mw_step if 1.0 <= ti < (1.0 + pulse_duration) else 0) for ti in t]
         
         nadir = np.min(freq_trace)
@@ -180,48 +190,54 @@ if st.button("🚀 Run Pulse Simulation", type="primary"):
         with col_g:
             fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(10, 8), sharex=True)
             
-            # Frequency
-            ax1.plot(t, freq_trace, 'b-', linewidth=2, label="Freq")
-            ax1.axhline(nadir_limit, color='r', linestyle='--', label="Low Limit")
-            ax1.axhline(overshoot_limit, color='orange', linestyle='--', label="High Limit")
+            # AX1: Frequency Response
+            ax1.plot(t, freq_trace, 'b-', linewidth=2, label="Frequency")
             
-            # Highlight Pulse Area
-            ax1.axvspan(1.0, 1.0+pulse_duration, color='gray', alpha=0.1, label="Load Active")
+            # Limits
+            ax1.axhline(nadir_limit, color='r', linestyle='--', alpha=0.5, label="Under-Freq Limit")
+            ax1.axhline(overshoot_limit, color='orange', linestyle='--', alpha=0.5, label="Over-Freq Limit")
             
-            ax1.set_ylabel("Hz")
+            # Pulse Zone
+            if pulse_duration < 100:
+                ax1.axvspan(1.0, 1.0+pulse_duration, color='gray', alpha=0.1, label="Load Pulse")
+            
+            ax1.set_ylabel("Frequency (Hz)")
             ax1.grid(True, alpha=0.3)
-            ax1.legend(loc="upper right")
-            ax1.set_title("Frequency Response (Overshoot & Undershoot)")
+            ax1.legend(loc="upper right", fontsize='small')
+            ax1.set_title("Frequency Stability (Nadir & Overshoot)")
             
-            # Power
-            ax2.plot(t, p_load_trace, 'k--', label="Load (AI Pulse)")
-            ax2.plot(t, p_mech_trace, 'g-', label="Gen (Mech)")
+            # AX2: Power Dynamics
+            ax2.plot(t, p_load_trace, 'k--', label="Load (Demand)")
+            ax2.plot(t, p_mech_trace, 'g-', label="Gens (Mechanical)")
             if sim_params['Bess_Enabled']:
-                ax2.plot(t, p_bess_trace, 'm-', label="BESS")
+                ax2.plot(t, p_bess_trace, 'm-', label="BESS (Injection)")
                 
-            ax2.set_ylabel("MW")
+            ax2.set_ylabel("Power (MW)")
             ax2.set_xlabel("Time (s)")
             ax2.grid(True, alpha=0.3)
-            ax2.legend()
+            ax2.legend(loc="upper right", fontsize='small')
             
             st.pyplot(fig)
             
         with col_kpi:
-            st.subheader("Metrics")
+            st.subheader("Results")
             
-            st.metric("Lowest Freq (Nadir)", f"{nadir:.3f} Hz", delta=f"{nadir-60.0:.3f}")
-            st.metric("Highest Freq (Peak)", f"{peak_freq:.3f} Hz", delta=f"{peak_freq-60.0:.3f}")
+            st.metric("Lowest (Nadir)", f"{nadir:.3f} Hz", delta=f"{nadir-60.0:.3f}")
+            st.metric("Highest (Peak)", f"{peak_freq:.3f} Hz", delta=f"{peak_freq-60.0:.3f}")
             
-            # Logic for Pass/Fail
+            # Pass/Fail Logic
+            failed = False
             if nadir < nadir_limit:
-                st.markdown(f"<div class='fail-box'>❌ <b>TRIP:</b> Under-Frequency</div>", unsafe_allow_html=True)
+                st.markdown(f"<div class='fail-box'>❌ <b>TRIP:</b> Frequency Low</div>", unsafe_allow_html=True)
+                failed = True
             elif peak_freq > overshoot_limit:
-                 st.markdown(f"<div class='fail-box'>❌ <b>TRIP:</b> Over-Frequency (Overshoot)</div>", unsafe_allow_html=True)
+                 st.markdown(f"<div class='fail-box'>❌ <b>TRIP:</b> Frequency High (Overshoot)</div>", unsafe_allow_html=True)
+                 failed = True
             else:
-                st.markdown(f"<div class='success-box'>✅ <b>PASS:</b> Stable</div>", unsafe_allow_html=True)
-                
-            if peak_freq > 61.0 and not sim_params['Bess_Enabled']:
-                st.info("ℹ️ Note the Overshoot when load drops. BESS can help absorb this recoil.")
+                st.markdown(f"<div class='success-box'>✅ <b>PASS:</b> Stable Operation</div>", unsafe_allow_html=True)
+            
+            if failed and not sim_params['Bess_Enabled']:
+                 st.info("💡 **Insight:** Generators are too slow to catch the load spike (Nadir) and too slow to back off when it ends (Overshoot). **Enable BESS** to fix both.")
 
     except Exception as e:
         st.error(f"Error: {str(e)}")
