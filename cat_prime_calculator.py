@@ -6,12 +6,13 @@ import plotly.express as px
 import plotly.graph_objects as go
 
 # --- PAGE CONFIGURATION ---
-st.set_page_config(page_title="CAT Primary Power Solutions v67", page_icon="⚡", layout="wide")
+st.set_page_config(page_title="CAT Primary Power Solutions v68", page_icon="⚡", layout="wide")
 
 # ==============================================================================
 # 0. HYBRID DATA LIBRARY
 # ==============================================================================
 
+# A. Generator Library
 leps_gas_library = {
     "XGC1900": {
         "description": "Mobile Power Module (High Speed)",
@@ -111,7 +112,7 @@ leps_gas_library = {
     }
 }
 
-# B. Data Center Profiles
+# B. Data Center Profiles (New Feature)
 dc_profiles = {
     "AI Training (Steady)": {
         "lf": 92.0, "pue": 1.20, "step_req": 20.0, 
@@ -179,28 +180,29 @@ st.title(t["title"])
 st.markdown(t["subtitle"])
 
 # ==============================================================================
-# 2. INPUTS (SIDEBAR)
+# 2. INPUTS (REORGANIZED SIDEBAR)
 # ==============================================================================
 
 with st.sidebar:
     # -------------------------------------------------------------------------
-    # GROUP 1: SITE & REQUIREMENTS
+    # GROUP 1: SITE & REQUIREMENTS (THE PROBLEM)
     # -------------------------------------------------------------------------
     st.header(t["sb_1"])
     
     st.markdown("🏗️ **Data Center Profile**")
+    # Profile Selector
     dc_type = st.selectbox("Data Center Type", list(dc_profiles.keys()))
     profile = dc_profiles[dc_type]
     st.caption(f"ℹ️ *{profile['desc']}*")
     
-    # Defaults
+    # Defaults from Profile
     def_step_load = profile['step_req']
     def_load_factor = profile['lf']
     def_use_bess = True if "AI" in dc_type else False
     
     p_it = st.number_input("Critical IT Load (MW)", 1.0, 1000.0, 100.0, step=10.0)
     
-    # Efficiency Input
+    # Efficiency Input Logic
     st.markdown("**Efficiency Input**")
     aux_mode = st.radio("Mode", ["PUE Input", "Auxiliaries (%)"], horizontal=True, label_visibility="collapsed")
     
@@ -216,13 +218,13 @@ with st.sidebar:
         
     st.caption(f"Calculated: PUE {pue_val:.2f} | Aux {aux_disp:.1f}%")
     
-    # --- GROSS LOAD CALCULATION ---
+    # --- GROSS LOAD CALCULATION (Fixing the previous error) ---
     design_gross_mw = p_it * pue_val
     st.markdown(f"**Gross Load:** `{design_gross_mw:.2f} MW`")
     
     avail_req = st.number_input("Required Availability (%)", 90.0, 99.99999, 99.99, format="%.5f")
     
-    # Load Factor
+    # Load Factor Input
     load_factor_pct = st.number_input("Annual Load Factor (%)", 10.0, 100.0, def_load_factor, 
                                       help="Avg utilization. Impacts LCOE via CAPEX dilution and Heat Rate.")
     
@@ -236,6 +238,7 @@ with st.sidebar:
     st.markdown("🌍 **Site Environment**")
     derate_mode = st.radio("Derate Mode", ["Auto-Calculate", "Manual"], horizontal=True)
     derate_factor_calc = 1.0
+    methane_number = 80
     
     if derate_mode == "Auto-Calculate":
         site_temp_c = 35 
@@ -268,15 +271,18 @@ with st.sidebar:
         area_unit_sel = c_a1.selectbox("Unit", ["m²", "Acres", "Hectares"])
         max_area_input = c_a2.number_input("Max Area", 0.0, 1000000.0, 0.0, step=100.0)
 
-    gas_source = st.selectbox("Fuel Source", ["Pipeline Network", "Pipeline + LNG Backup", "100% LNG Virtual Pipeline"])
+    gas_source = st.selectbox("Fuel Source Availability", ["Pipeline Network", "Pipeline + LNG Backup", "100% LNG Virtual Pipeline"])
+    use_pipeline = "Pipeline" in gas_source
     has_lng_storage = "LNG" in gas_source
     is_lng_primary = "100%" in gas_source
+    virtual_pipe_mode = "LNG" if has_lng_storage else "Pipeline"
 
-    dist_neighbor_m = st.number_input(f"Dist. to Neighbor ({u_dist})", 10.0, 5000.0, 100.0)
-    if is_imperial: dist_neighbor_m = dist_neighbor_m / 3.28084
-    
     reg_zone = st.selectbox("Regulatory Zone", ["USA - EPA Major", "EU Standard", "LatAm / No-Reg"])
     limit_nox_tpy = 250.0 if "EPA" in reg_zone else (150.0 if "EU" in reg_zone else 9999.0)
+    
+    dist_neighbor_m = st.number_input(f"Dist. to Neighbor ({u_dist})", 10.0, 5000.0, 100.0)
+    if is_imperial: dist_neighbor_m = dist_neighbor_m / 3.28084
+    noise_limit = 70.0 
 
     st.divider()
 
@@ -380,6 +386,7 @@ with st.sidebar:
     else:
         cool_idx = 0 if is_ai else 1
         cooling_method = st.selectbox("Cooling Tech", ["Water Cooled", "Air Cooled"], index=cool_idx)
+        pue_input = pue_val 
 
     with st.expander("Emission Hardware"):
         urea_days = st.number_input("Urea Days", 1, 30, 7)
@@ -619,6 +626,20 @@ area_bess = bess_power_total * 30
 area_sub = 2500
 total_area_m2 = (area_gen + storage_area_m2 + area_chp + area_bess + area_sub) * 1.2
 
+# --- NEW: AREA OPTIMIZER LOGIC (Restored) ---
+max_area_limit_m2 = 0
+if enable_optimizer and max_area_input > 0:
+    if area_unit_sel == "Acres": max_area_limit_m2 = max_area_input / 0.000247105
+    elif area_unit_sel == "Hectares": max_area_limit_m2 = max_area_input * 10000
+    else: max_area_limit_m2 = max_area_input
+
+    area_utilization_pct = min(100.0, (total_area_m2 / max_area_limit_m2) * 100)
+    
+    # Calculate Savings Scenarios (Restored logic from file)
+    savings_lng = storage_area_m2 * 1.2 
+    savings_chp = (area_chp - (p_net_req * 10)) * 1.2 
+    savings_turb = (area_gen * 0.60) * 1.2 
+
 # --- J. FINANCIALS & LCOE (CONSOLIDATED) ---
 # 1. Total CAPEX
 base_gen_cost_kw = gen_unit_cost 
@@ -674,58 +695,104 @@ c4.metric("Annual Generation", f"{mwh_year/1e3:.1f} GWh")
 
 st.markdown("---")
 
-# --- CHARTS ---
-col_a, col_b = st.columns([1, 1])
+# --- TABBED INTERFACE ---
+tab1, tab2, tab3 = st.tabs(["📊 Dashboard", "💰 Financial Analysis", "⚙️ Specs & Area"])
 
-with col_a:
-    st.subheader("Cost Structure")
-    costs = {
-        "CAPEX (Amortized)": annualized_capex,
-        "Fuel": fuel_cost_year,
-        "Fixed O&M": om_fixed_year,
-        "Variable O&M": om_var_year
-    }
-    df_costs = pd.DataFrame(list(costs.items()), columns=["Category", "Annual Cost ($)"])
-    fig_pie = px.pie(df_costs, values='Annual Cost ($)', names='Category', hole=0.4, 
-                     color_discrete_sequence=px.colors.qualitative.Set2)
-    st.plotly_chart(fig_pie, use_container_width=True)
+# --- TAB 1: DASHBOARD ---
+with tab1:
+    col_a, col_b = st.columns([1, 1])
+    with col_a:
+        st.subheader("Cost Structure")
+        costs = {
+            "CAPEX (Amortized)": annualized_capex,
+            "Fuel": fuel_cost_year,
+            "Fixed O&M": om_fixed_year,
+            "Variable O&M": om_var_year
+        }
+        df_costs = pd.DataFrame(list(costs.items()), columns=["Category", "Annual Cost ($)"])
+        fig_pie = px.pie(df_costs, values='Annual Cost ($)', names='Category', hole=0.4, 
+                         color_discrete_sequence=px.colors.qualitative.Set2)
+        st.plotly_chart(fig_pie, use_container_width=True)
 
-with col_b:
-    st.subheader("Sensitivity: Utilization Impact")
-    lf_range = range(30, 101, 10)
-    lcoe_sens = []
-    for lf in lf_range:
-        # Re-calc loop for sensitivity
-        e_mwh = design_gross_mw * (lf/100.0) * op_hours
+    with col_b:
+        st.subheader("Sensitivity: Utilization Impact")
+        lf_range = range(30, 101, 10)
+        lcoe_sens = []
+        for lf in lf_range:
+            e_mwh = design_gross_mw * (lf/100.0) * op_hours
+            if type_tech == "High Speed": 
+                if lf >= 85: ef = 1.0
+                elif lf >= 75: ef = 0.99
+                elif lf >= 50: ef = 0.97
+                else: ef = 0.92
+            else: 
+                if lf >= 85: ef = 1.0
+                else: ef = 0.98
+            ef = max(ef, 0.50)
+            hr_sens = (3412.14 / (base_eff * ef))
+            fuel_mmbtu = (e_mwh * 1000 * hr_sens) / 1e6
+            f_cost = fuel_mmbtu * gas_price
+            om = (om_var_price * e_mwh) + om_fixed_year
+            t_cost = annualized_capex + f_cost + om
+            l = t_cost / (e_mwh * 1000) if e_mwh > 0 else 0
+            lcoe_sens.append(l)
         
-        # Eff Factor logic
-        if type_tech == "High Speed": 
-            if lf >= 85: ef = 1.0
-            elif lf >= 75: ef = 0.99
-            elif lf >= 50: ef = 0.97
-            else: ef = 0.92
-        else: 
-            if lf >= 85: ef = 1.0
-            else: ef = 0.98
-        ef = max(ef, 0.50)
-        
-        hr_sens = (3412.14 / (base_eff * ef))
-        fuel_mmbtu = (e_mwh * 1000 * hr_sens) / 1e6
-        f_cost = fuel_mmbtu * gas_price
-        
-        om = (om_var_price * e_mwh) + om_fixed_year
-        t_cost = annualized_capex + f_cost + om
-        l = t_cost / (e_mwh * 1000) if e_mwh > 0 else 0
-        lcoe_sens.append(l)
+        fig_sens = px.line(x=lf_range, y=lcoe_sens, markers=True, labels={'x':'Load Factor (%)', 'y':'LCOE ($/kWh)'})
+        fig_sens.add_vline(x=load_factor_pct, line_dash="dash", line_color="red", annotation_text="Current")
+        st.plotly_chart(fig_sens, use_container_width=True)
+
+# --- TAB 2: FINANCIAL ANALYSIS (RESTORED) ---
+with tab2:
+    col_f1, col_f2 = st.columns([2, 1])
     
-    fig_sens = px.line(x=lf_range, y=lcoe_sens, markers=True, labels={'x':'Load Factor (%)', 'y':'LCOE ($/kWh)'})
-    fig_sens.add_vline(x=load_factor_pct, line_dash="dash", line_color="red", annotation_text="Current")
-    st.plotly_chart(fig_sens, use_container_width=True)
+    with col_f1:
+        st.subheader("Gas Price Sensitivity")
+        gas_prices_x = np.linspace(1, 15, 15)
+        lcoe_y = []
+        for gp in gas_prices_x:
+            # Simple sensitivity re-calc
+            f_cost = total_fuel_input_mmbtu_hr * op_hours * gp
+            t_cost = annualized_capex + f_cost + om_var_year + om_fixed_year
+            lcoe_y.append(t_cost / (mwh_year * 1000) if mwh_year > 0 else 0)
+            
+        fig_gas = px.line(x=gas_prices_x, y=lcoe_y, labels={'x': 'Gas Price ($/MMBtu)', 'y': 'LCOE ($/kWh)'})
+        fig_gas.add_vline(x=gas_price, line_dash="dash", line_color="red", annotation_text="Current")
+        fig_gas.add_hline(y=grid_price, line_dash="dot", line_color="green", annotation_text=f"Grid ({grid_price:.2f})")
+        st.plotly_chart(fig_gas, use_container_width=True)
 
-# Specs Table
-st.subheader("Technical Specification")
-tech_df = pd.DataFrame({
-    "Parameter": ["Design IT Load", "Design PUE / Aux", "Gross Design Capacity", "Avg Operating Load", "Net Heat Rate"],
-    "Value": [f"{p_it:.1f} MW", f"{pue_val:.2f} / {dc_aux_pct*100:.1f}%", f"{design_gross_mw:.2f} MW", f"{avg_operating_load_mw:.1f} MW", f"{net_hr_lhv:.0f} Btu/kWh"]
-})
-st.table(tech_df)
+    with col_f2:
+        st.subheader("Detailed Cost Breakdown")
+        fin_df = pd.DataFrame({
+            "Item": ["Generation Equipment", "Installation & Civil", "Logistics/BESS/Emission", "Total CAPEX", "Annual Fuel", "Annual O&M"],
+            "Value (M USD)": [
+                gen_cost_total,
+                civil_cost_m,
+                install_cost_m - civil_cost_m,
+                total_capex/1e6,
+                fuel_cost_year/1e6,
+                (om_var_year + om_fixed_year)/1e6
+            ]
+        })
+        st.dataframe(fin_df.style.format({"Value (M USD)": "${:,.2f}"}), hide_index=True)
+
+# --- TAB 3: SPECS & AREA ---
+with tab3:
+    st.subheader("Technical Specification")
+    tech_df = pd.DataFrame({
+        "Parameter": ["Design IT Load", "Design PUE / Aux", "Gross Design Capacity", "Avg Operating Load", "Net Heat Rate", "Installed Capacity (N+1)"],
+        "Value": [
+            f"{p_it:.1f} MW", 
+            f"{pue_val:.2f} / {dc_aux_pct*100:.1f}%", 
+            f"{design_gross_mw:.2f} MW", 
+            f"{avg_operating_load_mw:.1f} MW", 
+            f"{net_hr_lhv:.0f} Btu/kWh",
+            f"{installed_cap:.1f} MW"
+        ]
+    })
+    st.table(tech_df)
+    
+    if enable_optimizer:
+        st.subheader("Area Constraint Analysis")
+        st.metric("Area Utilization", f"{area_utilization_pct:.1f}%", f"{total_area_m2:.0f} / {max_area_limit_m2:.0f} {area_unit_sel}")
+        if area_utilization_pct > 100:
+            st.error(f"⚠️ Area Exceeded by {(total_area_m2 - max_area_limit_m2):.0f} {area_unit_sel}")
