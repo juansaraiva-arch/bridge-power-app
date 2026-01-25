@@ -654,6 +654,9 @@ avail_decimal = avail_req / 100
 mtbf_hours = gen_data["mtbf_hours"]
 
 n_reserve = 0
+prob_gen = 0.0  # Initialize to avoid NameError
+target_met = False
+
 for reserve in range(0, 10):
     n_total_test = n_running + reserve
     avg_avail, _ = calculate_availability_weibull(n_total_test, n_running, mtbf_hours, project_years)
@@ -661,7 +664,27 @@ for reserve in range(0, 10):
     if avg_avail >= avail_decimal:
         n_reserve = reserve
         prob_gen = avg_avail
+        target_met = True
         break
+
+# If loop completes without meeting target, use best attempt
+if not target_met:
+    n_reserve = 9  # Maximum reserve
+    n_total_test = n_running + n_reserve
+    prob_gen, _ = calculate_availability_weibull(n_total_test, n_running, mtbf_hours, project_years)
+    
+    # Show warning in sidebar
+    availability_gap = (avail_req - prob_gen * 100)
+    st.sidebar.error(f"⚠️ **Availability Target Not Met**")
+    st.sidebar.warning(f"Target: {avail_req:.3f}%\n\n"
+                      f"Achievable: {prob_gen*100:.3f}%\n\n"
+                      f"Gap: {availability_gap:.3f}%\n\n"
+                      f"Using maximum N+{n_reserve} configuration.")
+    st.sidebar.info("💡 **Recommendations:**\n"
+                   "- Use higher reliability generators\n"
+                   "- Add more redundancy (custom)\n"
+                   "- Consider hybrid approach\n"
+                   "- Review maintenance strategy")
 
 n_total = n_running + n_reserve
 installed_cap = n_total * unit_site_cap
@@ -1047,7 +1070,13 @@ with t1:
     c1.metric("Generator", selected_gen)
     c2.metric("Fleet", f"{n_running}+{n_reserve}")
     c3.metric("Installed", f"{installed_cap:.1f} MW")
-    c4.metric("Availability", f"{prob_gen*100:.3f}%")
+    
+    # Availability with status indicator
+    if target_met:
+        c4.metric("Availability", f"{prob_gen*100:.3f}%", delta="✅ Target Met", delta_color="normal")
+    else:
+        c4.metric("Availability", f"{prob_gen*100:.3f}%", delta="⚠️ Below Target", delta_color="inverse")
+    
     c5.metric("PUE", f"{pue_actual:.2f}")
     c6.metric("Density", f"{gen_data['power_density_mw_per_m2']:.3f} MW/m²")
     
@@ -1214,6 +1243,26 @@ with t2:
     
     # Reliability over time (Weibull)
     st.markdown("### 📊 Reliability Projection (Weibull Model)")
+    
+    # Add warning if target not met
+    if not target_met:
+        st.error(f"🛑 **Availability Target Not Achieved**")
+        col_gap1, col_gap2, col_gap3 = st.columns(3)
+        col_gap1.metric("Target", f"{avail_req:.3f}%")
+        col_gap2.metric("Achieved", f"{prob_gen*100:.3f}%", f"-{(avail_req - prob_gen*100):.3f}%")
+        col_gap3.metric("Configuration", f"N+{n_reserve} (Maximum)")
+        
+        st.warning("**Root Causes:**\n"
+                  f"- Generator MTBF: {mtbf_hours:,} hours\n"
+                  f"- Fleet degradation over {project_years} years\n"
+                  f"- Weibull aging model (shape=2.5)\n\n"
+                  "**Solutions:**\n"
+                  "1. Select generator with higher MTBF (e.g., Gas Turbine: 80k hrs)\n"
+                  "2. Reduce project life for analysis\n"
+                  "3. Accept lower availability target\n"
+                  "4. Implement predictive maintenance program")
+    else:
+        st.success(f"✅ **Availability Target Met:** {prob_gen*100:.3f}% ≥ {avail_req:.3f}% with N+{n_reserve}")
     
     years_range = list(range(1, project_years + 1))
     
@@ -1480,16 +1529,18 @@ def create_excel_export():
                 'DC Type', 'IT Load (MW)', 'PUE', 'Total DC Load (MW)',
                 'Avg Load (MW)', 'Peak Load (MW)', 'Capacity Factor (%)',
                 'Generator Model', 'Generator Type', 'Fleet Config',
-                'Installed Capacity (MW)', 'Availability (%)', 'Operating PUE',
-                'Strategy', 'Load/Unit (%)', 'Fleet Efficiency (%)',
+                'Installed Capacity (MW)', 'Availability Target (%)', 
+                'Availability Achieved (%)', 'Target Met',
+                'Operating PUE', 'Strategy', 'Load/Unit (%)', 'Fleet Efficiency (%)',
                 'Voltage (kV)', 'Primary Fuel', 'Region'
             ],
             'Value': [
                 dc_type, p_it, pue, p_total_dc,
                 p_total_avg, p_total_peak, capacity_factor*100,
                 selected_gen, gen_data['type'], f'{n_running}+{n_reserve}',
-                installed_cap, prob_gen*100, pue_actual,
-                load_strategy, load_per_unit_pct, fleet_efficiency*100,
+                installed_cap, avail_req, prob_gen*100, 
+                'Yes' if target_met else 'No',
+                pue_actual, load_strategy, load_per_unit_pct, fleet_efficiency*100,
                 rec_voltage_kv, fuel_mode, region
             ]
         }
