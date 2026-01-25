@@ -6,10 +6,10 @@ import plotly.express as px
 import plotly.graph_objects as go
 
 # --- PAGE CONFIGURATION ---
-st.set_page_config(page_title="CAT Primary Power Solutions v7.2", page_icon="⚡", layout="wide")
+st.set_page_config(page_title="CAT Primary Power Solutions v9.0", page_icon="🏭", layout="wide")
 
 # ==============================================================================
-# 0. HYBRID DATA LIBRARY
+# 0. LIBRERÍA DE DATOS (RESTAURADA COMPLETA)
 # ==============================================================================
 
 leps_gas_library = {
@@ -111,27 +111,27 @@ leps_gas_library = {
     }
 }
 
-# --- NEW: Data Center Profiles ---
+# --- PERFILES DE DATA CENTER (NUEVO) ---
 dc_profiles = {
     "AI Training (Steady)": {
         "lf": 92.0, "pue": 1.20, "step_req": 20.0, 
-        "desc": "High utilization, liquid cooling, low transients."
+        "desc": "Cargas masivas constantes. Alta utilización."
     },
     "AI Inference (Dynamic)": {
-        "lf": 60.0, "pue": 1.30, "step_req": 60.0, 
-        "desc": "Variable traffic, requires fast transient response."
+        "lf": 65.0, "pue": 1.30, "step_req": 60.0, 
+        "desc": "Tráfico variable tipo web. Requiere respuesta rápida."
     },
     "Hyperscale Cloud": {
         "lf": 80.0, "pue": 1.15, "step_req": 40.0, 
-        "desc": "Optimized efficiency, mixed workloads."
+        "desc": "Eficiencia optimizada, cargas mixtas."
     },
     "Enterprise / Colo": {
-        "lf": 50.0, "pue": 1.50, "step_req": 50.0, 
-        "desc": "Lower utilization due to redundancy (2N), standard cooling."
+        "lf": 55.0, "pue": 1.50, "step_req": 50.0, 
+        "desc": "Baja utilización por redundancia 2N."
     },
     "Crypto Mining": {
         "lf": 98.0, "pue": 1.05, "step_req": 5.0, 
-        "desc": "Max utilization, minimal cooling, flat load."
+        "desc": "Carga plana al 100%. Sin redundancia crítica."
     }
 }
 
@@ -165,77 +165,68 @@ else:
     u_hr = "kJ/kWh"
     hr_conv_factor = 1.055056 
 
-t = {
-    "title": f"⚡ CAT Primary Power Solutions ({freq_hz}Hz)",
-    "subtitle": "**Sovereign Energy Solutions.**\nAdvanced modeling for Off-Grid Microgrids, Tri-Generation, and Gas Infrastructure.",
-    "sb_1": "1. Site & Requirements",
-    "sb_2": "2. Technology Solution",
-    "sb_3": "3. Economics & ROI",
-    "kpi_net": "Net Capacity",
-    "kpi_pue": "Projected PUE"
-}
-
-st.title(t["title"])
-st.markdown(t["subtitle"])
+st.title(f"⚡ CAT Primary Power v9.0")
+st.markdown("**Full Engineering Engine** | Tri-Vector Sizing | Reliability Loop | Logistics Analysis")
 
 # ==============================================================================
-# 2. INPUTS (RESTORING ALL ORIGINAL INPUTS)
+# 2. INPUTS (INTEGRATED)
 # ==============================================================================
 
 with st.sidebar:
     # -------------------------------------------------------------------------
     # GROUP 1: SITE & REQUIREMENTS
     # -------------------------------------------------------------------------
-    st.header(t["sb_1"])
+    st.header("1. Site & Requirements")
     
-    st.markdown("🏗️ **Data Center Profile**")
-    # -- NEW: Profile Selector (Added Feature) --
+    st.markdown("🏗️ **Client Profile**")
     dc_type = st.selectbox("Data Center Type", list(dc_profiles.keys()))
     profile = dc_profiles[dc_type]
     st.caption(f"ℹ️ *{profile['desc']}*")
     
-    # Defaults from Profile
-    def_step_load = profile['step_req']
-    def_load_factor = profile['lf']
+    # Defaults
+    def_lf = profile['lf']
+    def_step = profile['step_req']
+    def_pue = profile['pue']
     
-    p_it = st.number_input("Critical IT Load (MW)", 1.0, 1000.0, 100.0, step=10.0)
+    p_it = st.number_input("Critical IT Load (MW)", 1.0, 1000.0, 100.0, step=5.0)
     
-    # -- NEW: Efficiency Input Logic (Added Feature) --
-    st.markdown("**Efficiency Input**")
-    aux_mode = st.radio("Mode", ["PUE Input", "Auxiliaries (%)"], horizontal=True, label_visibility="collapsed")
-    
-    if aux_mode == "PUE Input":
-        pue_val = st.number_input("Design PUE", 1.0, 3.0, profile['pue'], 0.01)
-        dc_aux_pct = (pue_val - 1.0) 
-        aux_disp = dc_aux_pct * 100.0
+    # PUE Logic (New)
+    eff_mode = st.radio("Efficiency Input", ["Use Profile PUE", "Custom PUE", "Custom Aux %"], horizontal=True, label_visibility="collapsed")
+    if eff_mode == "Use Profile PUE":
+        pue_val = def_pue
+        dc_aux_pct = pue_val - 1.0
+    elif eff_mode == "Custom PUE":
+        pue_val = st.number_input("Design PUE", 1.0, 3.0, def_pue, 0.01)
+        dc_aux_pct = pue_val - 1.0
     else:
-        def_aux = (profile['pue'] - 1.0) * 100.0
-        aux_disp = st.number_input("Auxiliaries (%)", 0.0, 100.0, def_aux, 0.5)
-        dc_aux_pct = aux_disp / 100.0
+        aux_val = st.number_input("Auxiliaries (%)", 0.0, 100.0, (def_pue-1)*100, 0.5)
+        dc_aux_pct = aux_val / 100.0
         pue_val = 1.0 + dc_aux_pct
         
-    st.caption(f"Calculated: PUE {pue_val:.2f} | Aux {aux_disp:.1f}%")
+    st.caption(f"Calculated: PUE {pue_val:.2f} | Aux {dc_aux_pct*100:.1f}%")
     
-    # -- RESTORED: Availability --
+    # CRITICAL: Gross Load Calculation
+    design_gross_mw = p_it * pue_val
+    st.markdown(f"**⚡ Design Gross Load:** `{design_gross_mw:.2f} MW`")
+    
     avail_req = st.number_input("Required Availability (%)", 90.0, 99.99999, 99.99, format="%.5f")
     
-    # -- NEW: Load Factor (Added Feature) --
-    load_factor_pct = st.number_input("Annual Load Factor (%)", 10.0, 100.0, def_load_factor, 
-                                      help="Avg utilization. Impacts LCOE via CAPEX dilution and Heat Rate.")
+    # Load Factor (New)
+    load_factor_pct = st.number_input("Annual Load Factor (%)", 10.0, 100.0, def_lf, 
+                                      help="Avg utilization. Impacts Fuel & LCOE, NOT Capacity.")
     
-    step_load_req = st.number_input("Step Load Req (%)", 0.0, 100.0, def_step_load)
+    step_load_req = st.number_input("Step Load Req (%)", 0.0, 100.0, def_step)
     
-    # -- RESTORED: Voltage Selection --
+    # Voltage (Restored)
     volt_mode = st.radio("Connection Voltage", ["Auto-Recommend", "Manual Selection"], horizontal=True)
     manual_voltage_kv = 0.0
     if volt_mode == "Manual Selection":
         manual_voltage_kv = st.number_input("Voltage (kV)", 0.4, 230.0, 13.8, step=0.1)
     
-    # -- RESTORED: Site Environment --
+    # Site Conditions (Restored)
     st.markdown("🌍 **Site Environment**")
     derate_mode = st.radio("Derate Mode", ["Auto-Calculate", "Manual"], horizontal=True)
     derate_factor_calc = 1.0
-    methane_number = 80
     
     if derate_mode == "Auto-Calculate":
         site_temp_c = 35 
@@ -249,17 +240,15 @@ with st.sidebar:
             site_temp_c = st.slider(f"Max Temp ({u_temp})", 0, 50, 35)
             site_alt_m = st.number_input(f"Altitude ({u_dist})", 0, 4000, 100)
         
-        methane_number = st.number_input("Methane Number (MN)", 30, 100, 80)
         loss_temp = max(0, (site_temp_c - 25) * 0.01) 
         loss_alt = max(0, (site_alt_m - 100) * 0.0001)
-        loss_mn = max(0, (75 - methane_number) * 0.005)
-        derate_factor_calc = 1.0 - (loss_temp + loss_alt + loss_mn)
+        derate_factor_calc = 1.0 - (loss_temp + loss_alt)
         st.caption(f"Calculated Derate: {derate_factor_calc:.3f}")
     else:
         manual_derate_pct = st.number_input("Manual Derate (%)", 0.0, 50.0, 5.0)
         derate_factor_calc = 1.0 - (manual_derate_pct / 100.0)
 
-    # -- RESTORED: Constraints --
+    # Constraints (Restored)
     st.markdown("🚧 **Constraints**")
     enable_optimizer = st.checkbox("Area Constraint?", value=False)
     max_area_input = 0.0
@@ -269,59 +258,60 @@ with st.sidebar:
         area_unit_sel = c_a1.selectbox("Unit", ["m²", "Acres", "Hectares"])
         max_area_input = c_a2.number_input("Max Area", 0.0, 1000000.0, 0.0, step=100.0)
 
-    gas_source = st.selectbox("Fuel Source Availability", ["Pipeline Network", "Pipeline + LNG Backup", "100% LNG Virtual Pipeline"])
+    gas_source = st.selectbox("Fuel Source", ["Pipeline Network", "Pipeline + LNG Backup", "100% LNG Virtual Pipeline"])
     use_pipeline = "Pipeline" in gas_source
     has_lng_storage = "LNG" in gas_source
-    is_lng_primary = "100%" in gas_source
-    virtual_pipe_mode = "LNG" if has_lng_storage else "Pipeline"
-
-    reg_zone = st.selectbox("Regulatory Zone", ["USA - EPA Major", "EU Standard", "LatAm / No-Reg"])
-    limit_nox_tpy = 250.0 if "EPA" in reg_zone else (150.0 if "EU" in reg_zone else 9999.0)
     
     dist_neighbor_m = st.number_input(f"Dist. to Neighbor ({u_dist})", 10.0, 5000.0, 100.0)
     if is_imperial: dist_neighbor_m = dist_neighbor_m / 3.28084
-    noise_limit = 70.0 # Industrial default
+    
+    reg_zone = st.selectbox("Regulatory Zone", ["USA - EPA Major", "EU Standard", "LatAm / No-Reg"])
+    limit_nox_tpy = 250.0 if "EPA" in reg_zone else (150.0 if "EU" in reg_zone else 9999.0)
 
     st.divider()
 
     # -------------------------------------------------------------------------
     # GROUP 2: TECHNOLOGY SOLUTION
     # -------------------------------------------------------------------------
-    st.header(t["sb_2"])
+    st.header("2. Technology Solution")
 
     st.markdown("⚙️ **Generators**")
     selected_model = st.selectbox("Select Model", list(leps_gas_library.keys()))
     eng_data = leps_gas_library[selected_model]
     
-    # Tech Validation Warning
     if eng_data['step_load_pct'] < step_load_req:
-        st.warning(f"⚠️ **Warning:** {selected_model} ({eng_data['step_load_pct']}%) may not meet Step Req ({step_load_req}%).")
+        st.warning(f"⚠️ {selected_model} ({eng_data['step_load_pct']}%) < Req ({step_load_req}%). BESS Recommended.")
     
     eff_input_method = st.radio("Efficiency Mode", ["Efficiency (%)", f"Heat Rate ({u_hr})"], horizontal=True)
     def_mw = eng_data['iso_rating_mw']
     def_eff_pct = eng_data['electrical_efficiency'] * 100.0
     def_hr_base = eng_data['heat_rate_lhv'] 
-    def_hr_disp = def_hr_base * hr_conv_factor
     
     col_t1, col_t2 = st.columns(2)
     unit_size_iso = col_t1.number_input("Rating (MW)", 0.1, 100.0, def_mw, format="%.2f")
     
-    final_elec_eff = 0.0
     if eff_input_method == "Efficiency (%)":
         eff_user = col_t2.number_input("Eff (ISO %)", 20.0, 65.0, def_eff_pct, format="%.1f")
-        final_elec_eff = eff_user / 100.0
+        base_eff = eff_user / 100.0
     else:
-        hr_user = col_t2.number_input(f"HR ({u_hr})", 5000.0, 15000.0, def_hr_disp, format="%.0f")
+        hr_user = col_t2.number_input(f"HR ({u_hr})", 5000.0, 15000.0, def_hr_base*hr_conv_factor, format="%.0f")
         hr_btu = hr_user / hr_conv_factor
-        final_elec_eff = 3412.14 / hr_btu
+        base_eff = 3412.14 / hr_btu
 
     c_aux1, c_aux2 = st.columns(2)
     dist_loss_pct = c_aux1.number_input("Dist Loss (%)", 0.0, 10.0, 1.0) / 100.0
     gen_parasitic_pct = c_aux2.number_input("Parasitics (%)", 0.0, 10.0, 2.5) / 100.0
 
-    c_c1, c_c2 = st.columns(2)
-    gen_unit_cost = c_c1.number_input("Equip ($/kW)", 100.0, 3000.0, eng_data['est_cost_kw'], step=10.0)
-    gen_install_cost = c_c2.number_input("Install ($/kW)", 50.0, 3000.0, eng_data['est_install_kw'], step=10.0)
+    # --- CAPEX INDICES (RESTORED LOGIC) ---
+    st.markdown("💰 **CAPEX Structure**")
+    gen_unit_cost = st.number_input("Equipment ($/kW)", 100.0, 3000.0, eng_data['est_cost_kw'], step=10.0)
+    
+    # Calculate Default Indices based on Library values
+    def_install_idx = (eng_data['est_install_kw'] / eng_data['est_cost_kw']) * 100
+    
+    c_idx1, c_idx2 = st.columns(2)
+    install_index = c_idx1.number_input("Install Index (%)", 0.0, 200.0, def_install_idx, help="% of Equip Cost for Mech/Elec Install")
+    civil_index = c_idx2.number_input("Civil Index (%)", 0.0, 100.0, 15.0, help="% of Equip Cost for Foundations/Buildings")
     
     c_p1, c_p2 = st.columns(2)
     step_load_cap = c_p1.number_input("Step Cap (%)", 0.0, 100.0, eng_data['step_load_pct'])
@@ -356,7 +346,7 @@ with st.sidebar:
             bess_om_kw_yr = st.number_input("O&M ($/kW-yr)", 0.0, 100.0, 10.0)
 
     st.markdown("🚚 **Logistics Infrastructure**")
-    dist_gas_main_m = st.number_input("Pipeline Dist (m)", 10.0, 20000.0, 1000.0, step=50.0)
+    dist_gas_main_m = st.number_input("Pipeline Dist (m)", 10.0, 50000.0, 1000.0, step=50.0)
     
     if is_imperial:
         supply_pressure_disp = st.number_input(f"Supply Press ({u_press})", 5.0, 1000.0, 60.0) 
@@ -400,7 +390,7 @@ with st.sidebar:
     # -------------------------------------------------------------------------
     # GROUP 3: ECONOMICS
     # -------------------------------------------------------------------------
-    st.header(t["sb_3"])
+    st.header("3. Economics & ROI")
     
     enable_lcoe_target = st.checkbox("Activate LCOE Optimization Loop")
     
@@ -433,12 +423,12 @@ with st.sidebar:
     wacc = c_e2.number_input("WACC (%)", 0.0, 15.0, 8.0) / 100.0
 
 # ==============================================================================
-# 2. CALCULATION ENGINE (PRIME PHYSICS ENGINE v2)
+# 2. CALCULATION ENGINE (COMPLETE)
 # ==============================================================================
 
 # --- A. POWER BALANCE ---
-# Use calculated variables from Inputs
-p_net_req = p_it * pue_val # IT + Aux
+# Use calculated Design Gross Load (MW) as the starting point
+p_net_req = design_gross_mw 
 
 if include_chp:
     cooling_mode = "Thermal (Absorption)"
@@ -446,7 +436,7 @@ else:
     cooling_mode = f"Elec ({cooling_method})"
 
 p_dist_loss_mw = p_net_req * dist_loss_pct
-p_gen_bus_req = p_net_req + p_dist_loss_mw # CRITICAL VARIABLE FOR SIZING
+p_gen_bus_req = p_net_req + p_dist_loss_mw
 
 # Voltage Selection Logic (Restored)
 if volt_mode == "Manual Selection":
@@ -494,7 +484,7 @@ else:
     else: driver_txt = "Steady State Load"
     bess_power_req = 0
 
-# --- C. RELIABILITY (PROBABILISTIC - GEN + BESS HYBRID LOOP) ---
+# --- C. RELIABILITY (BINOMIAL LOOP) ---
 n_maint = math.ceil(n_running * maint_outage_pct) 
 
 prob_gen_unit = 1.0 - forced_outage_pct
@@ -540,17 +530,17 @@ bess_multiplier = 1 + n_redundant_bess
 bess_power_total = bess_power_req * bess_multiplier
 bess_energy_total = bess_power_total * 2 
 
-# --- D. THERMODYNAMICS & ENERGY (UPDATED: LOAD FACTOR) ---
+# --- D. THERMODYNAMICS & ENERGY ---
 total_parasitics_mw = n_running * (unit_size_iso * gen_parasitic_pct)
 p_gross_total = p_gen_bus_req + total_parasitics_mw
 
-# Energy Calc using Load Factor (ADDED)
+# ENERGY CALCULATION WITH LOAD FACTOR
 avg_operating_load_mw = p_gross_total * (load_factor_pct / 100.0)
 mwh_year = avg_operating_load_mw * op_hours
 
-# Eff Penalty based on Annual Load Factor (ADDED)
+# EFFICIENCY PENALTY LOGIC
+# Calculate Real average engine load
 real_load_factor = avg_operating_load_mw / (n_running * unit_site_cap)
-base_eff = eng_data['electrical_efficiency']
 type_tech = eng_data.get('type', 'High Speed')
 
 if type_tech == "High Speed": 
@@ -581,7 +571,7 @@ else:
     hr_secondary = math.ceil(net_hr_lhv)
     unit_secondary = "Btu/kWh"
 
-# --- E. SHORT CIRCUIT (RESTORED) ---
+# --- E. SHORT CIRCUIT ---
 gen_mva_total = installed_cap / 0.8
 gen_sc_mva = gen_mva_total / xd_2_pu
 bess_sc_mva = 0.0
@@ -596,7 +586,7 @@ for b in [25, 31.5, 40, 50, 63]:
     if b > (isc_ka * 1.1): rec_breaker = b; break
 switchgear_cost_factor = 1.2 if isc_ka > 40 else 1.0
 
-# --- F. THERMAL (CHP) (RESTORED) ---
+# --- F. THERMAL (CHP) ---
 heat_input_mw = total_fuel_input_mmbtu_hr / 3.41214
 heat_exhaust_mw = heat_input_mw * 0.28
 heat_jacket_mw = heat_input_mw * 0.18
@@ -613,7 +603,7 @@ else:
 
 water_cons_daily_m3 = water_cons_m3_hr * 24
 
-# --- G. LOGISTICS (RESTORED) ---
+# --- G. LOGISTICS ---
 total_mmbtu_day = total_fuel_input_mmbtu_hr * 24
 peak_scfh = total_fuel_input_mmbtu_hr * 1000 
 req_pressure_min = eng_data.get('gas_pressure_min_psi', 0.5)
@@ -633,7 +623,7 @@ if has_lng_storage:
     log_text = f"LNG Storage: {vol_day:,.0f} gpd"
     storage_area_m2 = num_tanks * tank_area_unit
 
-# --- H. EMISSIONS (RESTORED) ---
+# --- H. EMISSIONS ---
 attenuation = 20 * math.log10(dist_neighbor_m)
 noise_rec = source_noise_dba + (10 * math.log10(n_running)) - attenuation
 raw_nox = eng_data['emissions_nox']
@@ -648,18 +638,15 @@ if req_scr:
 if force_oxicat: 
     at_capex_total += (installed_cap * 1000) * cost_oxicat_kw
 
-# --- I. FOOTPRINT (AREA OPTIMIZER) (RESTORED) ---
+# --- I. FOOTPRINT ---
 area_gen = n_total * 200 
 area_chp = total_cooling_mw * 20 if include_chp else (p_net_req * 10) 
 area_bess = bess_power_total * 30 
 area_sub = 2500
 total_area_m2 = (area_gen + storage_area_m2 + area_chp + area_bess + area_sub) * 1.2
 
+# Area Optimizer Logic
 max_area_limit_m2 = 0
-area_utilization_pct = 0
-is_area_exceeded = False
-savings_lng = 0; savings_chp = 0; savings_turb = 0
-
 if enable_optimizer and max_area_input > 0:
     if area_unit_sel == "Acres": max_area_limit_m2 = max_area_input / 0.000247105
     elif area_unit_sel == "Hectares": max_area_limit_m2 = max_area_input * 10000
@@ -672,12 +659,14 @@ if enable_optimizer and max_area_input > 0:
     savings_chp = (area_chp - (p_net_req * 10)) * 1.2 
     savings_turb = (area_gen * 0.60) * 1.2 
 
-# --- J. FINANCIALS & NPV ---
+# --- J. FINANCIALS & LCOE (INDEXED CAPEX LOGIC) ---
+# 1. Total CAPEX
 base_gen_cost_kw = gen_unit_cost 
 gen_cost_total = (installed_cap * 1000) * base_gen_cost_kw / 1e6 
 
-idx_install = (gen_install_cost / gen_unit_cost) * switchgear_cost_factor
-idx_chp = 0.20 if include_chp else 0
+# Calculate Installation & Civil using Indices
+civil_cost_m = gen_cost_total * (civil_index/100.0)
+install_cost_val_m = gen_cost_total * (install_index/100.0)
 
 bess_capex_m = 0.0
 bess_om_annual = 0.0
@@ -688,12 +677,11 @@ if use_bess:
     bess_om_annual = (bess_power_total * 1000 * bess_om_kw_yr) 
 
 pipe_cost_m = (dist_gas_main_m * 150) / 1e6 
-civil_cost_m = gen_cost_total * 0.15 
-install_cost_m = (gen_cost_total * idx_install) + (gen_cost_total * idx_chp) + (at_capex_total/1e6) + (log_capex/1e6) + pipe_cost_m
+install_total_m = install_cost_val_m + (at_capex_total/1e6) + (log_capex/1e6) + pipe_cost_m
 
-total_capex = (gen_cost_total + bess_capex_m + civil_cost_m + install_cost_m) * 1e6 
+total_capex = (gen_cost_total + bess_capex_m + civil_cost_m + install_total_m) * 1e6 
 
-# OPEX (Using Load Factored Energy)
+# 2. OPEX
 fuel_cost_year = total_fuel_input_mmbtu_hr * op_hours * gas_price 
 om_var_year = om_var_price * mwh_year 
 om_fixed_year = (installed_cap * 1000 * 12 * 1.5) + bess_om_annual 
@@ -701,7 +689,7 @@ if include_chp: om_fixed_year += (total_cooling_mw * 1000 * 10)
 
 total_opex_year = fuel_cost_year + om_var_year + om_fixed_year
 
-# LCOE
+# 3. LCOE
 if wacc > 0:
     crf = (wacc * (1 + wacc)**project_years) / ((1 + wacc)**project_years - 1)
 else:
@@ -710,7 +698,7 @@ else:
 annualized_capex = total_capex * crf
 lcoe_usd_kwh = (annualized_capex + total_opex_year) / (mwh_year * 1000) if mwh_year > 0 else 0.0
 
-# Sweet Spot (RESTORED)
+# 4. Sweet Spot
 total_mmbtu_year = total_fuel_input_mmbtu_hr * op_hours
 breakeven_gas_price = 0.0
 if total_mmbtu_year > 0:
@@ -726,13 +714,13 @@ st.markdown(f"**Profile:** {dc_type} | **PUE:** {pue_val:.2f} | **Load Factor:**
 # --- KPI CARDS ---
 c1, c2, c3, c4 = st.columns(4)
 c1.metric("LCOE", f"${lcoe_usd_kwh:.4f}/kWh", f"Fuel: ${fuel_cost_year/(mwh_year*1000) if mwh_year > 0 else 0:.4f}")
-c2.metric("Total CAPEX", f"${total_capex/1e6:.1f} M")
+c2.metric("Total CAPEX", f"${total_capex/1e6:.1f} M", f"Gen: {n_total} Units")
 c3.metric("Annual Fuel Cost", f"${fuel_cost_year/1e6:.1f} M", f"Eff Pen: {(eff_factor-1)*-100:.1f}%")
 c4.metric("Annual Generation", f"{mwh_year/1e3:.1f} GWh")
 
 st.markdown("---")
 
-# --- TABS (RESTORED ALL TABS) ---
+# --- TABBED INTERFACE ---
 tab1, tab2, tab3, tab4 = st.tabs(["📊 Dashboard", "💰 Financials & Optimization", "⚙️ Technical Specs", "🏗️ Area & Logistics"])
 
 # --- TAB 1: DASHBOARD ---
@@ -756,7 +744,7 @@ with tab1:
         lf_range = range(30, 101, 10)
         lcoe_sens = []
         for lf in lf_range:
-            e_mwh = p_gross_total * (lf/100.0) * op_hours
+            e_mwh = design_gross_mw * (lf/100.0) * op_hours
             if type_tech == "High Speed": 
                 if lf >= 85: ef = 1.0
                 elif lf >= 75: ef = 0.99
@@ -804,11 +792,12 @@ with tab2:
     with col_f2:
         st.subheader("Detailed Cost Breakdown")
         fin_df = pd.DataFrame({
-            "Item": ["Generation Equipment", "Installation & Civil", "Logistics/BESS/Emission", "Total CAPEX", "Annual Fuel", "Annual O&M"],
+            "Item": ["Generation Equipment", "Installation & Mech/Elec", "Civil Works", "Logistics/BESS/Emission", "Total CAPEX", "Annual Fuel", "Annual O&M"],
             "Value (M USD)": [
                 gen_cost_total,
+                install_cost_val_m,
                 civil_cost_m,
-                install_cost_m - civil_cost_m,
+                (total_capex/1e6) - gen_cost_total - install_cost_val_m - civil_cost_m,
                 total_capex/1e6,
                 fuel_cost_year/1e6,
                 (om_var_year + om_fixed_year)/1e6
@@ -816,7 +805,7 @@ with tab2:
         })
         st.dataframe(fin_df.style.format({"Value (M USD)": "${:,.2f}"}), hide_index=True)
 
-# --- TAB 3: TECH SPECS (RESTORED DETAILED SIZING) ---
+# --- TAB 3: TECH SPECS ---
 with tab3:
     col_t1, col_t2 = st.columns(2)
     with col_t1:
@@ -842,7 +831,7 @@ with tab3:
             st.success("✅ Emissions Compliant")
         st.write(f"**Noise:** {noise_rec:.1f} dBA @ {dist_neighbor_m:.0f}m")
 
-# --- TAB 4: AREA & LOGISTICS (RESTORED DETAILS) ---
+# --- TAB 4: AREA & LOGISTICS ---
 with tab4:
     c_l1, c_l2 = st.columns(2)
     with c_l1:
