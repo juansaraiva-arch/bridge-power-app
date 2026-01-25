@@ -6,10 +6,10 @@ import plotly.express as px
 import plotly.graph_objects as go
 
 # --- PAGE CONFIGURATION ---
-st.set_page_config(page_title="CAT Primary Power Solutions v9.0", page_icon="🏭", layout="wide")
+st.set_page_config(page_title="CAT Primary Power Solutions v9.1", page_icon="🏭", layout="wide")
 
 # ==============================================================================
-# 0. LIBRERÍA DE DATOS (RESTAURADA COMPLETA)
+# 0. LIBRERÍA DE DATOS
 # ==============================================================================
 
 leps_gas_library = {
@@ -111,7 +111,7 @@ leps_gas_library = {
     }
 }
 
-# --- PERFILES DE DATA CENTER (NUEVO) ---
+# --- PERFILES DE DATA CENTER ---
 dc_profiles = {
     "AI Training (Steady)": {
         "lf": 92.0, "pue": 1.20, "step_req": 20.0, 
@@ -165,7 +165,7 @@ else:
     u_hr = "kJ/kWh"
     hr_conv_factor = 1.055056 
 
-st.title(f"⚡ CAT Primary Power v9.0")
+st.title(f"⚡ CAT Primary Power v9.1")
 st.markdown("**Full Engineering Engine** | Tri-Vector Sizing | Reliability Loop | Logistics Analysis")
 
 # ==============================================================================
@@ -258,9 +258,13 @@ with st.sidebar:
         area_unit_sel = c_a1.selectbox("Unit", ["m²", "Acres", "Hectares"])
         max_area_input = c_a2.number_input("Max Area", 0.0, 1000000.0, 0.0, step=100.0)
 
-    gas_source = st.selectbox("Fuel Source", ["Pipeline Network", "Pipeline + LNG Backup", "100% LNG Virtual Pipeline"])
+    gas_source = st.selectbox("Fuel Source Availability", ["Pipeline Network", "Pipeline + LNG Backup", "100% LNG Virtual Pipeline"])
     use_pipeline = "Pipeline" in gas_source
     has_lng_storage = "LNG" in gas_source
+    
+    # --- CORRECCIÓN AQUÍ: Definiendo is_lng_primary ---
+    is_lng_primary = "100%" in gas_source
+    # --------------------------------------------------
     
     dist_neighbor_m = st.number_input(f"Dist. to Neighbor ({u_dist})", 10.0, 5000.0, 100.0)
     if is_imperial: dist_neighbor_m = dist_neighbor_m / 3.28084
@@ -423,7 +427,7 @@ with st.sidebar:
     wacc = c_e2.number_input("WACC (%)", 0.0, 15.0, 8.0) / 100.0
 
 # ==============================================================================
-# 2. CALCULATION ENGINE (COMPLETE)
+# 2. CALCULATION ENGINE
 # ==============================================================================
 
 # --- A. POWER BALANCE ---
@@ -792,12 +796,11 @@ with tab2:
     with col_f2:
         st.subheader("Detailed Cost Breakdown")
         fin_df = pd.DataFrame({
-            "Item": ["Generation Equipment", "Installation & Mech/Elec", "Civil Works", "Logistics/BESS/Emission", "Total CAPEX", "Annual Fuel", "Annual O&M"],
+            "Item": ["Generation Equipment", "Installation & Civil", "Logistics/BESS/Emission", "Total CAPEX", "Annual Fuel", "Annual O&M"],
             "Value (M USD)": [
                 gen_cost_total,
-                install_cost_val_m,
                 civil_cost_m,
-                (total_capex/1e6) - gen_cost_total - install_cost_val_m - civil_cost_m,
+                install_cost_m - civil_cost_m,
                 total_capex/1e6,
                 fuel_cost_year/1e6,
                 (om_var_year + om_fixed_year)/1e6
@@ -805,7 +808,7 @@ with tab2:
         })
         st.dataframe(fin_df.style.format({"Value (M USD)": "${:,.2f}"}), hide_index=True)
 
-# --- TAB 3: TECH SPECS ---
+# --- TAB 3: TECH SPECS (RESTORED DETAILED SIZING) ---
 with tab3:
     col_t1, col_t2 = st.columns(2)
     with col_t1:
@@ -831,7 +834,7 @@ with tab3:
             st.success("✅ Emissions Compliant")
         st.write(f"**Noise:** {noise_rec:.1f} dBA @ {dist_neighbor_m:.0f}m")
 
-# --- TAB 4: AREA & LOGISTICS ---
+# --- TAB 4: AREA & LOGISTICS (RESTORED DETAILS) ---
 with tab4:
     c_l1, c_l2 = st.columns(2)
     with c_l1:
