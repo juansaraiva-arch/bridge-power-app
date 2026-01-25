@@ -6,13 +6,13 @@ import plotly.express as px
 import plotly.graph_objects as go
 
 # --- PAGE CONFIGURATION ---
-st.set_page_config(page_title="CAT Primary Power Solutions v65", page_icon="⚡", layout="wide")
+st.set_page_config(page_title="CAT Primary Power Solutions v66", page_icon="⚡", layout="wide")
 
 # ==============================================================================
 # 0. HYBRID DATA LIBRARY
 # ==============================================================================
 
-# A. Generator Library (Full Fidelity)
+# A. Generator Library
 leps_gas_library = {
     "XGC1900": {
         "description": "Mobile Power Module (High Speed)",
@@ -112,7 +112,7 @@ leps_gas_library = {
     }
 }
 
-# B. Data Center Profiles (New!)
+# B. Data Center Profiles
 dc_profiles = {
     "AI Training (Steady)": {
         "lf": 92.0, "pue": 1.20, "step_req": 20.0, 
@@ -190,28 +190,27 @@ with st.sidebar:
     st.header(t["sb_1"])
     
     st.markdown("🏗️ **Data Center Profile**")
-    # -- NEW: Profile Selector --
+    # Profile Selector
     dc_type = st.selectbox("Data Center Type", list(dc_profiles.keys()))
     profile = dc_profiles[dc_type]
     st.caption(f"ℹ️ *{profile['desc']}*")
     
-    # -- NEW: Step Load & Load Factor Defaults from Profile --
+    # Defaults from Profile
     def_step_load = profile['step_req']
     def_load_factor = profile['lf']
     def_use_bess = True if "AI" in dc_type else False
     
     p_it = st.number_input("Critical IT Load (MW)", 1.0, 1000.0, 100.0, step=10.0)
     
-    # -- NEW: PUE vs Aux Logic --
+    # Efficiency Input
     st.markdown("**Efficiency Input**")
     aux_mode = st.radio("Mode", ["PUE Input", "Auxiliaries (%)"], horizontal=True, label_visibility="collapsed")
     
     if aux_mode == "PUE Input":
         pue_val = st.number_input("Design PUE", 1.0, 3.0, profile['pue'], 0.01)
-        dc_aux_pct = (pue_val - 1.0) # Decimal for calculation
+        dc_aux_pct = (pue_val - 1.0) # Decimal
         aux_disp = dc_aux_pct * 100.0
     else:
-        # Default aux from profile PUE
         def_aux = (profile['pue'] - 1.0) * 100.0
         aux_disp = st.number_input("Auxiliaries (%)", 0.0, 100.0, def_aux, 0.5)
         dc_aux_pct = aux_disp / 100.0
@@ -219,9 +218,14 @@ with st.sidebar:
         
     st.caption(f"Calculated: PUE {pue_val:.2f} | Aux {aux_disp:.1f}%")
     
+    # --- CORRECTION: VARIABLE DEFINITION ADDED HERE ---
+    design_gross_mw = p_it * pue_val
+    st.markdown(f"**Gross Load:** `{design_gross_mw:.2f} MW`")
+    # --------------------------------------------------
+    
     avail_req = st.number_input("Required Availability (%)", 90.0, 99.99999, 99.99, format="%.5f")
     
-    # -- NEW: Load Factor Input (Pre-filled by Profile) --
+    # Load Factor Input (Pre-filled by Profile)
     load_factor_pct = st.number_input("Annual Load Factor (%)", 10.0, 100.0, def_load_factor, 
                                       help="Avg utilization. Impacts LCOE via CAPEX dilution and Heat Rate.")
     
@@ -296,7 +300,7 @@ with st.sidebar:
     selected_model = st.selectbox("Select Model", list(leps_gas_library.keys()))
     eng_data = leps_gas_library[selected_model]
     
-    # Tech Validation Warning (New!)
+    # Tech Validation Warning
     if eng_data['step_load_pct'] < step_load_req:
         st.warning(f"⚠️ **Warning:** {selected_model} ({eng_data['step_load_pct']}%) may not meet the Step Load req ({step_load_req}%). Consider BESS.")
     
@@ -396,7 +400,6 @@ with st.sidebar:
     else:
         cool_idx = 0 if is_ai else 1
         cooling_method = st.selectbox("Cooling Tech", ["Water Cooled", "Air Cooled"], index=cool_idx)
-        # Reusing PUE calculated above for thermal load
         pue_input = pue_val 
 
     # Emission Solutions
@@ -421,7 +424,7 @@ with st.sidebar:
     if enable_lcoe_target:
         target_lcoe = st.number_input("Target LCOE ($/kWh)", 0.05, 0.50, 0.11, step=0.005) 
         benchmark_price = target_lcoe
-        grid_price = 0.0 # Not used
+        grid_price = 0.0 
     else:
         grid_price = st.number_input("Grid Price Benchmark ($/kWh)", 0.05, 0.50, 0.15, help="Used for Savings comparison/ROI.")
         benchmark_price = grid_price
@@ -450,14 +453,9 @@ with st.sidebar:
 # ==============================================================================
 
 # --- A. POWER BALANCE ---
-# Use calculated Design Gross Load (MW) as the starting point
-p_net_req = design_gross_mw # This includes IT + Aux
+p_net_req = design_gross_mw 
 
 if include_chp:
-    # If CHP, we assume cooling is thermal. 
-    # But wait, p_net_req includes electrical aux.
-    # We need to separate IT Load vs Electrical Aux vs Thermal Cooling potential
-    # Simple model: p_net_req is what generators must supply electrically.
     cooling_mode = "Thermal (Absorption)"
 else:
     cooling_mode = f"Elec ({cooling_method})"
@@ -561,20 +559,15 @@ bess_energy_total = bess_power_total * 2
 total_parasitics_mw = n_running * (unit_size_iso * gen_parasitic_pct)
 p_gross_total = p_gen_bus_req + total_parasitics_mw
 
-# -- NEW: ENERGY CALCULATION WITH LOAD FACTOR --
-# "Average Operating Load" considers the Load Factor over the year
-# We apply load_factor_pct to the Gross Design Load
+# Energy Calc with Load Factor
 avg_operating_load_mw = p_gross_total * (load_factor_pct / 100.0)
 mwh_year = avg_operating_load_mw * op_hours
 
-# Real instantaneous load factor (design point) is usually high, but annual average is lower
-# We need to know the 'Efficiency Penalty' based on the ANNUAL Average Load Factor
+# Eff Penalty
 real_load_factor = avg_operating_load_mw / (n_running * unit_site_cap)
-
 base_eff = eng_data['electrical_efficiency']
 type_tech = eng_data.get('type', 'High Speed')
 
-# Penalize Efficiency if Load Factor is low
 if type_tech == "High Speed": 
     if load_factor_pct >= 85: eff_factor = 1.0
     elif load_factor_pct >= 75: eff_factor = 0.99
@@ -589,7 +582,7 @@ gross_eff_site = base_eff * eff_factor
 gross_hr_lhv = 3412.14 / gross_eff_site
 
 total_fuel_input_mmbtu_hr = avg_operating_load_mw * (gross_hr_lhv / 1000) 
-net_hr_lhv = (total_fuel_input_mmbtu_hr * 1e6) / (p_net_req * (load_factor_pct/100.0) * 1000) # Norm to Net Output
+net_hr_lhv = (total_fuel_input_mmbtu_hr * 1e6) / (p_net_req * (load_factor_pct/100.0) * 1000) 
 net_hr_hhv = net_hr_lhv * 1.108
 
 if is_imperial:
@@ -691,7 +684,7 @@ gen_cost_total = (installed_cap * 1000) * base_gen_cost_kw / 1e6
 idx_install = (gen_install_cost / gen_unit_cost) * switchgear_cost_factor
 idx_chp = 0.20 if include_chp else 0
 
-# BESS DETAILED CAPEX
+# BESS CAPEX
 bess_capex_m = 0.0
 bess_om_annual = 0.0
 if use_bess:
@@ -700,17 +693,17 @@ if use_bess:
     bess_capex_m = (cost_power_part + cost_energy_part) / 1e6
     bess_om_annual = (bess_power_total * 1000 * bess_om_kw_yr) 
 
-pipe_cost_m = (dist_gas_main_m * 150) / 1e6 # $150/m estimate
+pipe_cost_m = (dist_gas_main_m * 150) / 1e6 
 civil_cost_m = gen_cost_total * 0.15 
 install_cost_m = (gen_cost_total * idx_install) + (gen_cost_total * idx_chp) + (at_capex_total/1e6) + (log_capex/1e6) + pipe_cost_m
 
-total_capex = (gen_cost_total + bess_capex_m + civil_cost_m + install_cost_m) * 1e6 # USD
+total_capex = (gen_cost_total + bess_capex_m + civil_cost_m + install_cost_m) * 1e6 
 
 # OPEX Calculation
 fuel_cost_year = total_fuel_input_mmbtu_hr * op_hours * gas_price 
 om_var_year = om_var_price * mwh_year 
 om_fixed_year = (installed_cap * 1000 * 12 * 1.5) + bess_om_annual 
-if include_chp: om_fixed_year += (total_cooling_mw * 1000 * 10) # Chiller O&M
+if include_chp: om_fixed_year += (total_cooling_mw * 1000 * 10) 
 
 total_opex_year = fuel_cost_year + om_var_year + om_fixed_year
 
