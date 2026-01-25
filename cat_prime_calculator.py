@@ -6,7 +6,7 @@ import plotly.express as px
 import plotly.graph_objects as go
 
 # --- PAGE CONFIGURATION ---
-st.set_page_config(page_title="CAT Primary Power Solutions v9.1", page_icon="🏭", layout="wide")
+st.set_page_config(page_title="CAT Primary Power Solutions v9.2", page_icon="🏭", layout="wide")
 
 # ==============================================================================
 # 0. LIBRERÍA DE DATOS
@@ -165,7 +165,7 @@ else:
     u_hr = "kJ/kWh"
     hr_conv_factor = 1.055056 
 
-st.title(f"⚡ CAT Primary Power v9.1")
+st.title(f"⚡ CAT Primary Power v9.2")
 st.markdown("**Full Engineering Engine** | Tri-Vector Sizing | Reliability Loop | Logistics Analysis")
 
 # ==============================================================================
@@ -240,6 +240,7 @@ with st.sidebar:
             site_temp_c = st.slider(f"Max Temp ({u_temp})", 0, 50, 35)
             site_alt_m = st.number_input(f"Altitude ({u_dist})", 0, 4000, 100)
         
+        methane_number = st.number_input("Methane Number (MN)", 30, 100, 80)
         loss_temp = max(0, (site_temp_c - 25) * 0.01) 
         loss_alt = max(0, (site_alt_m - 100) * 0.0001)
         derate_factor_calc = 1.0 - (loss_temp + loss_alt)
@@ -261,10 +262,7 @@ with st.sidebar:
     gas_source = st.selectbox("Fuel Source Availability", ["Pipeline Network", "Pipeline + LNG Backup", "100% LNG Virtual Pipeline"])
     use_pipeline = "Pipeline" in gas_source
     has_lng_storage = "LNG" in gas_source
-    
-    # --- CORRECCIÓN AQUÍ: Definiendo is_lng_primary ---
     is_lng_primary = "100%" in gas_source
-    # --------------------------------------------------
     
     dist_neighbor_m = st.number_input(f"Dist. to Neighbor ({u_dist})", 10.0, 5000.0, 100.0)
     if is_imperial: dist_neighbor_m = dist_neighbor_m / 3.28084
@@ -799,8 +797,8 @@ with tab2:
             "Item": ["Generation Equipment", "Installation & Civil", "Logistics/BESS/Emission", "Total CAPEX", "Annual Fuel", "Annual O&M"],
             "Value (M USD)": [
                 gen_cost_total,
-                civil_cost_m,
-                install_cost_m - civil_cost_m,
+                civil_cost_m + install_cost_val_m,
+                install_total_m - install_cost_val_m + bess_capex_m,
                 total_capex/1e6,
                 fuel_cost_year/1e6,
                 (om_var_year + om_fixed_year)/1e6
