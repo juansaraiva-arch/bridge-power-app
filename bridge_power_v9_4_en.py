@@ -467,17 +467,18 @@ with t2:
     with t3:
         st.subheader("⚙️ Technical Engineering Analysis")
     
-    col_tech1, col_tech2 = st.columns(2)
+    # Definimos las columnas con nombres seguros
+    c_tech1, c_tech2 = st.columns(2)
     
-    with col_tech1:
+    with c_tech1:
         st.markdown("#### 🏗️ Site Footprint & Logistics")
-        # Verificamos si las variables de área existen (por si no aplicaste el Paso 2 de cálculos)
+        # Verificación de seguridad por si faltan los cálculos previos
         if 'total_area' in locals():
             c_ft1, c_ft2 = st.columns(2)
             c_ft1.metric("Total Area Required", f"{total_area:,.0f} m²", area_status)
             c_ft2.metric("Power Density", f"{installed_mw/total_area*1000:.1f} kW/m²")
             
-            # Desglose de Área
+            # Tabla de Áreas
             footprint_df = pd.DataFrame({
                 "Zone": ["Generation Hall", "BESS Containers", "Logistics/Fuel"],
                 "Area (m²)": [area_gen, area_bess, area_logistics]
@@ -487,9 +488,10 @@ with t2:
             if area_status == "❌ OVERFLOW":
                 st.error(f"Site limit exceeded by {total_area - max_area_m2:,.0f} m²!")
         else:
-            st.warning("⚠️ Calculation Engine not updated yet. Please apply Step 2.")
+            st.warning("⚠️ Calculation Engine not updated yet. Please apply Step 2 (Calculations).")
 
-    with col_tech2:
+    # Usamos c_tech2 consistentemente
+    with c_tech2:
         st.markdown("#### 🌍 Emissions & Compliance")
         if 'nox_ton_yr' in locals():
             c_em1, c_em2 = st.columns(2)
@@ -504,7 +506,7 @@ with t2:
                 c_em2.success("Standard Compliance OK")
                 st.caption("Engine meets limits without extra hardware.")
         else:
-            st.warning("⚠️ Calculation Engine not updated yet.")
+            st.warning("⚠️ Waiting for emissions calculation...")
 
     st.divider()
     
@@ -519,19 +521,16 @@ with t2:
         if use_bess:
             st.markdown("**🔋 BESS Sizing Logic:**")
             if 'bess_bkdn' in locals() and bess_bkdn:
-                # Tu gráfica de BESS
+                # Gráfica de BESS
                 bess_chart_data = pd.DataFrame({
                     "Driver": list(bess_bkdn.keys()),
                     "Power Req (MW)": list(bess_bkdn.values())
                 })
-                # Filtramos valores muy pequeños para limpiar la gráfica
+                # Filtro para limpiar gráfica
                 bess_chart_data = bess_chart_data[bess_chart_data["Power Req (MW)"] > 0.01]
-                
-                # Usamos st.bar_chart simple o Plotly si prefieres
                 st.bar_chart(bess_chart_data.set_index("Driver"))
             else:
-                st.info("BESS breakdown data not available.")
-  
+                st.info("BESS breakdown data not available.") 
     
         # Asegúrate de que esta línea esté alineada dentro de 'with t3:'
     if use_bess:
@@ -661,6 +660,7 @@ with t4:
 # --- FOOTER ---
 st.markdown("---")
 st.caption("Calculation Engine: Fusion of V9.3 Business Logic + V3.0 Physics Core")
+
 
 
 
