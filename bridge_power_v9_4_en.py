@@ -178,13 +178,13 @@ with st.sidebar:
     load_step_pct = st.slider("Max Load Step (%)", 0, 100, 50 if is_ai else 20)
     load_ramp = st.number_input("Ramp Rate (MW/s)", 0.1, 10.0, 2.0)
     
-    # --- 3. TECNOLOGÍA ---
-    st.header("3. Technology Solution")
-    selected_gen = st.selectbox("Generator Model", list(leps_gas_library.keys()))
-    gen_data = leps_gas_library[selected_gen]
-    
-    use_bess = st.checkbox("Include BESS (Hybrid)", value=True)
-    enable_black_start = st.checkbox("Black Start Capable", value=True)
+    # --- 3. TECNOLOGÍA (Colapsable) ---
+    with st.expander("3. Technology & Configuration", expanded=True):
+        selected_gen = st.selectbox("Generator Model", list(leps_gas_library.keys()))
+        gen_data = leps_gas_library[selected_gen]
+        
+        use_bess = st.checkbox("Include BESS (Hybrid)", value=True)
+        enable_black_start = st.checkbox("Black Start Capable", value=True)
     
     # --- 4. SITIO Y DERATEO AVANZADO ---
     st.header("4. Site Conditions & Constraints")
@@ -389,6 +389,18 @@ with t1:
 
 with t2:
     st.subheader("💰 Financial Decision Analysis")
+
+with st.expander("📊 Sensitivity Analysis: Gas Price Stress Test", expanded=False):
+        sim_gas_price = st.slider("Simulate Gas Price ($/MMBtu)", 1.0, 15.0, fuel_price, 0.5)
+        
+        # Recálculo rápido para sensibilidad
+        sim_fuel_cost = fuel_mmbtu_hr * sim_gas_price * 730
+        sim_monthly = sim_fuel_cost + gen_rent_mo + bess_rent_mo + urea_opex_mo
+        diff = sim_monthly - monthly_bill
+        
+        c_sens1, c_sens2 = st.columns(2)
+        c_sens1.metric("Simulated Monthly Bill", f"${sim_monthly/1000:,.0f}k", f"{diff/1000:+.0f}k vs Base")
+        c_sens2.metric("Simulated LCOE", f"${(sim_monthly/(p_total_avg*730)*1000):.3f}/kWh")
     
     # --- 1. TIME TO MARKET (COST OF DELAY) ---
     if enable_ttm and grid_delay_mo > 0:
@@ -504,58 +516,120 @@ with t2:
         st.plotly_chart(fig_vpp, use_container_width=True)
 
 with t3:
-    st.subheader("⚙️ Technical Engineering Analysis")
+    st.subheader("⚙️ Dashboard de Ingeniería y Física")
     
-    c_tech1, c_tech2 = st.columns(2)
+    # --- 1. INDICADORES DE RENDIMIENTO (GAUGES) ---
+    c_g1, c_g2, c_g3 = st.columns(3)
     
-    with c_tech1:
-        st.markdown("#### 🏗️ Site Footprint & Logistics")
-        # Ahora 'total_area' SEGURO existe porque calculamos arriba
-        c_ft1, c_ft2 = st.columns(2)
-        c_ft1.metric("Total Area Required", f"{total_area:,.0f} m²", area_status)
-        c_ft2.metric("Power Density", f"{installed_mw/total_area*1000:.1f} kW/m²")
-        
-        footprint_df = pd.DataFrame({
-            "Zone": ["Generation Hall", "BESS Containers", "Logistics/Fuel"],
-            "Area (m²)": [area_gen, area_bess, area_logistics]
-        })
-        st.dataframe(footprint_df, use_container_width=True, hide_index=True)
-        
-        if area_status == "❌ OVERFLOW":
-            st.error(f"Site limit exceeded by {total_area - max_area_m2:,.0f} m²!")
+    # Gauge 1: Estabilidad Transitoria (Voltage Sag)
+    fig_sag = go.Figure(go.Indicator(
+        mode = "gauge+number",
+        value = voltage_sag,
+        title = {'text': "Caída de Voltaje (Sag)"},
+        gauge = {
+            'axis': {'range': [0, 30]},
+            'bar': {'color': "black"},
+            'steps': [
+                {'range': [0, 15], 'color': "#55efc4"}, # Verde (Safe)
+                {'range': [15, 20], 'color': "#ffeaa7"}, # Amarillo (Warning)
+                {'range': [20, 30], 'color': "#ff7675"}  # Rojo (Fail)
+            ],
+            'threshold': {'line': {'color': "red", 'width': 4}, 'thickness': 0.75, 'value': 15}
+        }
+    ))
+    fig_sag.update_layout(height=250, margin=dict(l=20, r=20, t=30, b=20))
+    c_g1.plotly_chart(fig_sag, use_container_width=True)
+    
+    # Gauge 2: Eficiencia Térmica Real
+    fig_eff = go.Figure(go.Indicator(
+        mode = "gauge+number",
+        value = fleet_eff * 100,
+        title = {'text': "Eficiencia Flota (%)"},
+        gauge = {
+            'axis': {'range': [20, 50]},
+            'bar': {'color': "#0984e3"},
+            'steps': [
+                {'range': [0, 35], 'color': "#fab1a0"},
+                {'range': [35, 40], 'color': "#ffeaa7"},
+                {'range': [40, 50], 'color': "#55efc4"}
+            ]
+        }
+    ))
+    fig_eff.update_layout(height=250, margin=dict(l=20, r=20, t=30, b=20))
+    c_g2.plotly_chart(fig_eff, use_container_width=True)
 
-    with c_tech2:
-        st.markdown("#### 🌍 Emissions & Compliance")
-        c_em1, c_em2 = st.columns(2)
-        c_em1.metric("NOx Potential", f"{nox_ton_yr:.1f} Ton/yr", f"Raw: {gen_data['emissions_nox']} g/bhp-hr")
-        
-        if req_scr:
-            c_em2.error("SCR System Required")
-            st.warning(f"⚠️ Strict limits require Aftertreatment (SCR).")
-            st.write(f"• **SCR CAPEX:** ${scr_capex/1e6:.2f} M (Added to Mob)")
-            st.write(f"• **Urea OPEX:** ${urea_opex_mo:,.0f} / month")
-        else:
-            c_em2.success("Standard Compliance OK")
-            st.caption("Engine meets limits without extra hardware.")
+    # Gauge 3: Carga por Unidad (Wet Stacking Monitor)
+    fig_load = go.Figure(go.Indicator(
+        mode = "gauge+number",
+        value = load_pct,
+        title = {'text': "Carga por Unidad (%)"},
+        gauge = {
+            'axis': {'range': [0, 110]},
+            'bar': {'color': "black"},
+            'steps': [
+                {'range': [0, 40], 'color': "#ff7675"}, # Rojo (Wet Stacking)
+                {'range': [40, 60], 'color': "#ffeaa7"}, # Amarillo
+                {'range': [60, 90], 'color': "#55efc4"}, # Verde (Óptimo)
+                {'range': [90, 110], 'color': "#fab1a0"} # Naranja (Sobrecarga)
+            ],
+            'threshold': {'line': {'color': "red", 'width': 4}, 'thickness': 0.75, 'value': 100}
+        }
+    ))
+    fig_load.update_layout(height=250, margin=dict(l=20, r=20, t=30, b=20))
+    c_g3.plotly_chart(fig_load, use_container_width=True)
 
     st.divider()
+
+    # --- 2. HUELLA Y EMISIONES ---
+    c_tech1, c_tech2 = st.columns([1, 1])
     
-    st.subheader("⚡ Transient Physics (Deep Dive)")
-    c_phys1, c_phys2 = st.columns([1, 2])
-    
-    with c_phys1:
-        st.metric("Voltage Sag", f"{voltage_sag:.2f}%", "Limit < 15%")
-        st.metric("Step Load Capability", f"{p_total_avg * load_step_pct/100:.1f} MW", f"{load_step_pct}% Step")
-    
-    with c_phys2:
-        if use_bess and bess_bkdn:
-            st.markdown("**🔋 BESS Sizing Logic:**")
-            bess_chart_data = pd.DataFrame({
-                "Driver": list(bess_bkdn.keys()),
-                "Power Req (MW)": list(bess_bkdn.values())
+    with c_tech1:
+        st.markdown("#### 🏗️ Footprint & Layout")
+        if 'total_area' in locals():
+            footprint_df = pd.DataFrame({
+                "Zone": ["Generation Hall", "BESS Area", "Logistics/Fuel"],
+                "Area (m²)": [area_gen, area_bess, area_logistics]
             })
-            bess_chart_data = bess_chart_data[bess_chart_data["Power Req (MW)"] > 0.01]
-            st.bar_chart(bess_chart_data.set_index("Driver"))
+            # Gráfico de Dona para Footprint
+            fig_foot = px.pie(footprint_df, values='Area (m²)', names='Zone', hole=0.4, 
+                             title=f"Total: {total_area:,.0f} m²", color_discrete_sequence=px.colors.sequential.RdBu)
+            fig_foot.update_layout(height=300, margin=dict(t=30, b=0, l=0, r=0))
+            st.plotly_chart(fig_foot, use_container_width=True)
+            
+            if area_status == "❌ OVERFLOW":
+                st.error(f"🚨 Site Constraint Violation: Need {total_area - max_area_m2:,.0f} m² more!")
+        else:
+            st.warning("⚠️ Run calculations first.")
+
+    with c_tech2:
+        st.markdown("#### 🌍 Emissions Control")
+        if 'nox_ton_yr' in locals():
+            st.metric("NOx Potential (Raw)", f"{nox_ton_yr:.1f} Ton/yr", f"Limit Strategy: {limit_nox}")
+            
+            if req_scr:
+                st.error("🛑 EPA Tier 4 Requirement Met: SCR Active")
+                st.dataframe(pd.DataFrame({
+                    "Item": ["SCR Hardware CAPEX", "Urea OPEX (Monthly)"],
+                    "Cost": [f"${scr_capex/1e6:.2f} M", f"${urea_opex_mo:,.0f}"]
+                }), hide_index=True, use_container_width=True)
+            else:
+                st.success("✅ Standard Emissions Compliant (No SCR needed)")
+                
+    st.divider()
+    
+    # --- 3. BESS DEEP DIVE ---
+    if use_bess and bess_bkdn:
+        st.markdown("#### 🔋 BESS Dimensioning Logic (The 'Why')")
+        bess_chart_data = pd.DataFrame({
+            "Driver": list(bess_bkdn.keys()),
+            "Power Req (MW)": list(bess_bkdn.values())
+        })
+        bess_chart_data = bess_chart_data[bess_chart_data["Power Req (MW)"] > 0.01]
+        
+        fig_bess = px.bar(bess_chart_data, x="Driver", y="Power Req (MW)", text_auto='.1f',
+                         title="BESS Sizing Drivers (Dominant Factor sets capacity)",
+                         color="Driver", color_discrete_sequence=px.colors.qualitative.Prism)
+        st.plotly_chart(fig_bess, use_container_width=True)
 
 with t4:
     st.header("📄 Executive Report Generation")
@@ -628,6 +702,7 @@ with t4:
 # --- FOOTER ---
 st.markdown("---")
 st.caption("Calculation Engine: Fusion of V9.3 Business Logic + V3.0 Physics Core")
+
 
 
 
