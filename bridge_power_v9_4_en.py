@@ -345,9 +345,40 @@ with t3:
             st.error(f"❌ Voltage Sag: {voltage_sag:.2f}% (Limit 15%)")
             st.warning("Action: Add BESS or more generators.")
             
-        if use_bess:
-            st.write("**BESS Component Sizing:**")
-            st.json(bess_bkdn)
+     if use_bess:
+            st.markdown("### 🔋 BESS Sizing Breakdown")
+            
+            # 1. Preparar datos para gráfica
+            # Convertimos el diccionario 'bess_bkdn' en un DataFrame visualizable
+            bess_chart_data = pd.DataFrame({
+                "Driver": list(bess_bkdn.keys()),
+                "Power Req (MW)": list(bess_bkdn.values())
+            })
+            
+            # 2. Filtrar valores insignificantes (para que no salgan barras de 0 MW)
+            bess_chart_data = bess_chart_data[bess_chart_data["Power Req (MW)"] > 0.01]
+            
+            # 3. Crear Gráfico de Barras con Plotly
+            fig_bess = px.bar(
+                bess_chart_data, 
+                x="Driver", 
+                y="Power Req (MW)",
+                text="Power Req (MW)",
+                title="BESS Sizing Drivers (MW required per function)",
+                color="Driver",
+                color_discrete_sequence=px.colors.qualitative.Safe
+            )
+            
+            # 4. Estilizar
+            fig_bess.update_traces(texttemplate='%{text:.1f} MW', textposition='outside')
+            fig_bess.update_layout(showlegend=False, height=350, margin=dict(l=20, r=20, t=40, b=20))
+            
+            # 5. Renderizar
+            st.plotly_chart(fig_bess, use_container_width=True)
+            
+            # Explicación contextual
+            driver_max = max(bess_bkdn, key=bess_bkdn.get)
+            st.caption(f"ℹ️ The BESS is sized to meet the largest requirement: **{driver_max} ({bess_bkdn[driver_max]:.1f} MW)**.")   
             
     with c_tech2:
         st.write("**Efficiency & Fuel**")
@@ -431,3 +462,4 @@ with t4:
 # --- FOOTER ---
 st.markdown("---")
 st.caption("Calculation Engine: Fusion of V9.3 Business Logic + V3.0 Physics Core")
+
