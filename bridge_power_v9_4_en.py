@@ -530,7 +530,7 @@ with t2:
                 # Usamos st.bar_chart simple o Plotly si prefieres
                 st.bar_chart(bess_chart_data.set_index("Driver"))
             else:
-                st.info("BESS breakdown data not available.")v
+                st.info("BESS breakdown data not available.")
     
         # Asegúrate de que esta línea esté alineada dentro de 'with t3:'
     if use_bess:
@@ -660,6 +660,7 @@ with t4:
 # --- FOOTER ---
 st.markdown("---")
 st.caption("Calculation Engine: Fusion of V9.3 Business Logic + V3.0 Physics Core")
+
 
 
 
