@@ -198,19 +198,41 @@ with st.sidebar:
     biz_model = st.radio("Financial Mode", ["Bridge / Rental (OPEX)", "Permanent / Purchase (CAPEX)"])
     is_rental = "Rental" in biz_model
     
-    fuel_price = st.number_input("Gas Price ($/MMBtu)", 1.0, 20.0, 4.5)
+  fuel_price = st.number_input("Gas Price ($/MMBtu)", 1.0, 20.0, 4.5)
+
+    # --- NUEVO: TIME TO MARKET ---
+    st.divider()
+    st.markdown("⏱️ **Time-to-Market Economics**")
+    enable_ttm = st.checkbox("Include Revenue Analysis?", value=True)
     
+    if enable_ttm:
+        grid_delay_mo = st.number_input("Grid Connection Delay (Months)", 0, 60, 18, help="Meses de espera por la red.")
+        revenue_per_mw_mo = st.number_input("DC Revenue ($/MW-mo)", 10000, 1000000, 200000, step=10000, help="Facturación estimada por MW IT.")
+    else:
+        grid_delay_mo = 0
+        revenue_per_mw_mo = 0
+    
+    st.divider()
+
     if is_rental:
         st.markdown("💰 **Rental Parameters**")
         rental_rate_kw = st.number_input("Gen Rental ($/kW-mo)", 10.0, 60.0, gen_data["est_rent_mo_kw"])
         bess_rate_kw = st.number_input("BESS Rental ($/kW-mo)", 15.0, 60.0, 35.0)
         contract_months = st.number_input("Contract Duration (Months)", 6, 60, 24)
+        
+        # --- NUEVO: Costos de Movilización ---
+        st.markdown("🚚 **Logistics (One-Time)**")
+        mob_cost = st.number_input("Mobilization ($)", 0, 1000000, 150000, step=10000)
+        demob_cost = st.number_input("Demobilization ($)", 0, 1000000, 100000, step=10000)
+        
         buyout_pct = st.number_input("Buyout Option @ End (%)", 0.0, 100.0, 20.0)
     else:
         st.markdown("🏗️ **Purchase Parameters**")
         capex_kw = st.number_input("Turnkey CAPEX ($/kW)", 500.0, 2000.0, 800.0)
         project_years = st.number_input("Project Life (Years)", 5, 30, 20)
         wacc = st.number_input("WACC (%)", 5.0, 15.0, 8.0) / 100
+        # Valores dummy para evitar errores
+        mob_cost = 0; demob_cost = 0; rental_rate_kw = 0; contract_months = project_years*12  
 
 # ==============================================================================
 # 3. MOTOR DE CÁLCULO (CORE)
@@ -255,10 +277,12 @@ bess_rent_mo = (bess_mw * 1000 * bess_rate_kw)
 if is_rental:
     monthly_bill = fuel_cost_mo + gen_rent_mo + bess_rent_mo
     lcoe = monthly_bill / (p_total_avg * hours_mo) * 1000 # $/MWh
-    total_contract_value = monthly_bill * contract_months
     
-    # Lógica de Buyout (Step 8 del V9)
-    ref_new_price = n_total * unit_site_cap * 1000 * 800 # Ref $800/kW nuevo
+    # Total Contract = Mensualidades + Mob + Demob
+    total_contract_value = (monthly_bill * contract_months) + mob_cost + demob_cost
+    
+    # Lógica de Buyout
+    ref_new_price = n_total * unit_site_cap * 1000 * 800 
     buyout_price = ref_new_price * (buyout_pct/100)
 else:
     # CAPEX Simple
@@ -270,6 +294,7 @@ else:
     annual_fuel = fuel_cost_mo * 12
     lcoe = (annual_capex + annual_fuel) / (p_total_avg * 8760) * 1000
     monthly_bill = lcoe * p_total_avg * hours_mo / 1000
+    mob_cost = 0 # Dummy para evitar error en gráfica
 
 # ==============================================================================
 # 4. DASHBOARD DE RESULTADOS
@@ -306,33 +331,85 @@ with t1:
         st.metric("Step Load", f"{p_total_avg * load_step_pct/100:.1f} MW ({load_step_pct}%)")
 
 with t2:
-    if is_rental:
-        st.subheader("Rental Financial Breakdown")
-        fin_df = pd.DataFrame({
-            "Category": ["Gen Rental", "BESS Rental", "Fuel (Est)"],
-            "Monthly Cost": [gen_rent_mo, bess_rent_mo, fuel_cost_mo]
-        })
-        c_fin1, c_fin2 = st.columns([1, 2])
-        c_fin1.dataframe(fin_df.style.format({"Monthly Cost": "${:,.0f}"}), use_container_width=True)
-        c_fin1.metric("Total Contract Value", f"${total_contract_value/1e6:.1f} M", f"{contract_months} Months")
+    st.subheader("💰 Financial Decision Analysis")
+    
+    # --- 1. TIME TO MARKET (COST OF DELAY) ---
+    if enable_ttm and grid_delay_mo > 0:
+        # CÁLCULOS
+        total_revenue_gained = p_it * revenue_per_mw_mo * grid_delay_mo
+        cost_bridge_total = monthly_bill * grid_delay_mo
+        cost_grid_total = (p_total_avg * 730 * 0.08) * grid_delay_mo # Asumiendo $0.08 red
         
-        fig_fin = px.pie(fin_df, values="Monthly Cost", names="Category", title="Monthly Bill Composition", hole=0.4)
-        c_fin2.plotly_chart(fig_fin, use_container_width=True)
+        premium_paid = cost_bridge_total - cost_grid_total
+        net_benefit = total_revenue_gained - premium_paid
+        roi_ttm = (net_benefit / premium_paid) * 100 if premium_paid > 0 else 0
         
+        c_ttm1, c_ttm2 = st.columns([1, 2])
+        
+        with c_ttm1:
+            st.metric("Revenue Gained (Early Start)", f"${total_revenue_gained/1e6:,.1f} M", f"{grid_delay_mo} Months early")
+            st.metric("Bridge Power Premium", f"-${premium_paid/1e6:,.1f} M", "Cost over Grid")
+            st.metric("NET PROJECT BENEFIT", f"${net_benefit/1e6:,.1f} M", f"ROI: {roi_ttm:.0f}%", delta_color="normal")
+            
+        with c_ttm2:
+            fig_waterfall = go.Figure(go.Waterfall(
+                name = "20", orientation = "v",
+                measure = ["relative", "relative", "total"],
+                x = ["Revenue Gained", "Rental Premium Cost", "Net Benefit"],
+                textposition = "outside",
+                text = [f"+${total_revenue_gained/1e6:.1f}M", f"-${premium_paid/1e6:.1f}M", f"${net_benefit/1e6:.1f}M"],
+                y = [total_revenue_gained, -premium_paid, net_benefit],
+                connector = {"line":{"color":"rgb(63, 63, 63)"}},
+            ))
+            fig_waterfall.update_layout(title = "The Cost of Waiting vs. Starting Now", height=300)
+            st.plotly_chart(fig_waterfall, use_container_width=True)
+            
         st.divider()
-        st.subheader("Exit Strategy (End of Term)")
-        c_ex1, c_ex2 = st.columns(2)
-        c_ex1.metric("Buyout Price", f"${buyout_price/1e6:.1f} M", f"{buyout_pct}% of New Value")
-        c_ex2.info("💡 **Bridge-to-Permanent:** Buying the assets allows conversion to Backup/Peaking plant for long-term grid support.")
-        
-        # Simulación VPP (Revenue Stacking)
-        vpp_rev = installed_mw * 40000 # $40k/MW-año estimado en VPP
-        c_ex2.write(f"**Potential VPP Revenue:** ${vpp_rev/1e6:.2f}M / year (Post-Buyout)")
 
-    else:
-        st.subheader("CAPEX Purchase Model")
-        st.metric("Total Project CAPEX", f"${total_capex/1e6:.1f} M")
-        st.metric("Annual OPEX (Fuel)", f"${annual_fuel/1e6:.1f} M")
+    # --- 2. RENT VS BUY ANALYSIS ---
+    st.subheader("Rent vs. Buy Analysis (Cumulative Cash Flow)")
+    
+    months_proj = list(range(1, 61))
+    
+    # RENTA: Incluye Mob al inicio
+    cum_rent = [mob_cost + (monthly_bill * m) for m in months_proj]
+    
+    # COMPRA: CAPEX inicial + OPEX bajo
+    purchase_capex = installed_mw * 1000 * 800 # Est. $800/kW
+    if use_bess: purchase_capex += (bess_mw * 1000 * 300)
+    monthly_opex_purchase = fuel_cost_mo + (installed_mw * 1000 * 15) 
+    cum_buy = [purchase_capex + (monthly_opex_purchase * m) for m in months_proj]
+    
+    # Breakeven
+    breakeven_month = next((i for i, (r, b) in enumerate(zip(cum_rent, cum_buy)) if r > b), None)
+    
+    c_chart, c_kpi = st.columns([2, 1])
+    
+    with c_chart:
+        fig_fin = px.line(x=months_proj, y=[cum_rent, cum_buy], labels={"x": "Months", "value": "Cumulative Cost ($)"})
+        fig_fin.data[0].name = "Rental Scenario"
+        fig_fin.data[1].name = "Purchase Scenario"
+        fig_fin.update_layout(title="Cumulative Cash Flow Comparison")
+        if breakeven_month:
+             fig_fin.add_vline(x=breakeven_month, line_dash="dot", annotation_text="Breakeven")
+        st.plotly_chart(fig_fin, use_container_width=True)
+        
+    with c_kpi:
+        if is_rental:
+            st.metric("Total Contract Value", f"${total_contract_value/1e6:.1f} M", f"{contract_months} Months")
+            st.metric("One-Time Costs", f"${(mob_cost+demob_cost)/1000:,.0f} k", "Mob + Demob")
+            if breakeven_month:
+                st.info(f"📉 **Breakeven:** Month {breakeven_month}")
+            
+            # Desglose OPEX
+            fin_df = pd.DataFrame({
+                "Category": ["Gen Rental", "BESS Rental", "Fuel (Est)"],
+                "Monthly Cost": [gen_rent_mo, bess_rent_mo, fuel_cost_mo]
+            })
+            st.dataframe(fin_df.style.format({"Monthly Cost": "${:,.0f}"}), use_container_width=True, hide_index=True)
+
+    if is_rental:
+        st.info(f"💡 **Exit Strategy:** Buyout Option at Month {contract_months}: **${buyout_price/1e6:.2f} M** ({buyout_pct}% of Asset Value)")
 
 with t3:
     st.subheader("Physics & Stability")
@@ -474,5 +551,6 @@ with t4:
 # --- FOOTER ---
 st.markdown("---")
 st.caption("Calculation Engine: Fusion of V9.3 Business Logic + V3.0 Physics Core")
+
 
 
