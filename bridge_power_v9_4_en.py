@@ -464,7 +464,7 @@ with t2:
     if is_rental:
         st.info(f"💡 **Exit Strategy:** Buyout Option at Month {contract_months}: **${buyout_price/1e6:.2f} M** ({buyout_pct}% of Asset Value)")
 
-    with t3:
+        with t3:
     st.subheader("⚙️ Technical Engineering Analysis")
     
     col_tech1, col_tech2 = st.columns(2)
@@ -531,6 +531,7 @@ with t2:
                 st.bar_chart(bess_chart_data.set_index("Driver"))
             else:
                 st.info("BESS breakdown data not available.")
+  
     
         # Asegúrate de que esta línea esté alineada dentro de 'with t3:'
     if use_bess:
@@ -660,6 +661,7 @@ with t4:
 # --- FOOTER ---
 st.markdown("---")
 st.caption("Calculation Engine: Fusion of V9.3 Business Logic + V3.0 Physics Core")
+
 
 
 
