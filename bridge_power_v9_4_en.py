@@ -186,12 +186,32 @@ with st.sidebar:
     use_bess = st.checkbox("Include BESS (Hybrid)", value=True)
     enable_black_start = st.checkbox("Black Start Capable", value=True)
     
-    # --- 4. SITIO Y DERATEO ---
-    st.header("4. Site Conditions")
-    temp_c = st.slider("Max Ambient Temp (°C)", 20, 50, 35)
-    alt_m = st.number_input("Altitude (m)", 0, 3000, 100)
-    derate = max(0.5, 1.0 - (max(0, temp_c-25)*0.01) - (alt_m/1000 * 0.1))
+    # --- 4. SITIO Y DERATEO AVANZADO ---
+    st.header("4. Site Conditions & Constraints")
+    
+    col_s1, col_s2 = st.columns(2)
+    temp_c = col_s1.slider("Max Ambient Temp (°C)", 20, 50, 35)
+    alt_m = col_s2.number_input("Altitude (m)", 0, 4000, 100, step=100)
+    methane_number = st.slider("Gas Methane Number (MN)", 30, 100, 80, help="Calidad del gas (MN<70 requiere derateo fuerte)")
+    
+    # Cálculo de Derateo (Lógica CAT QuickSize v3)
+    # 1. Temperatura: -1% por cada 1°C sobre 25°C
+    derate_temp = 1.0 - max(0, (temp_c - 25) * 0.01)
+    # 2. Altitud: -1% por cada 100m sobre 100m
+    derate_alt = 1.0 - max(0, (alt_m - 100) * 0.0001)
+    # 3. Combustible: -0.5% por cada punto de MN bajo 70
+    derate_fuel = 1.0 - max(0, (75 - methane_number) * 0.005)
+    
+    derate = max(0.5, derate_temp * derate_alt * derate_fuel)
     unit_site_cap = gen_data["iso_rating_mw"] * derate
+    
+    st.caption(f"📉 **Site Rating:** {unit_site_cap:.2f} MW (Factor: {derate*100:.1f}%)")
+    if derate < 0.85:
+        st.warning(f"⚠️ High Derate detected! Check Cooling/Gas quality.")
+
+    # Restricciones Ambientales
+    limit_nox = st.selectbox("Emissions Limit (NOx)", ["No Limit", "World Bank (Standard)", "EPA Tier 4 (Strict)"])
+    max_area_m2 = st.number_input("Max Available Area (m²)", 0, 50000, 0, help="Dejar en 0 si no hay limite")
     
     # --- 5. MODELO DE NEGOCIO (LOGICA V9) --
     st.header("5. Commercial Strategy")
@@ -295,6 +315,39 @@ else:
     lcoe = (annual_capex + annual_fuel) / (p_total_avg * 8760) * 1000
     monthly_bill = lcoe * p_total_avg * hours_mo / 1000
     mob_cost = 0 # Dummy para evitar error en gráfica
+
+# ==============================================================================
+# 3b. CÁLCULOS DE INGENIERÍA DETALLADA (Footprint & Emissions)
+# ==============================================================================
+
+# A. Emisiones y Urea
+total_bhp = p_total_avg * 1341 # Convertir MW a BHP
+nox_g_bhp_hr = gen_data["emissions_nox"]
+nox_ton_yr = (nox_g_bhp_hr * total_bhp * 8760) / 907185 # Toneladas cortas
+
+req_scr = False
+scr_capex = 0
+urea_opex_mo = 0
+
+if limit_nox == "EPA Tier 4 (Strict)" and nox_g_bhp_hr > 0.1:
+    req_scr = True
+    # CAPEX SCR estimado: $60/kW
+    scr_capex = installed_mw * 1000 * 60 
+    # Consumo Urea estimado: 1.5% del consumo de combustible
+    urea_liters_yr = (fuel_mmbtu_hr / 0.138) * 0.015 * 8760 # Approx
+    urea_opex_mo = (urea_liters_yr / 12) * 0.50 # $0.50/litro
+
+# B. Footprint (Huella Física)
+# Datos QuickSize: Generador ~200m²/MW (incluye pasillos), BESS ~30m²/MW
+area_gen = installed_mw * (1 / gen_data["power_density_mw_per_m2"])
+area_bess = bess_mw * 30 if use_bess else 0
+area_logistics = 200 # Zona de descarga básica
+if is_rental: area_logistics += 300 # Patio de maniobras extra
+
+total_area = area_gen + area_bess + area_logistics
+area_status = "✅ OK"
+if max_area_m2 > 0 and total_area > max_area_m2:
+    area_status = "❌ OVERFLOW"
 
 # ==============================================================================
 # 4. DASHBOARD DE RESULTADOS
@@ -411,18 +464,67 @@ with t2:
     if is_rental:
         st.info(f"💡 **Exit Strategy:** Buyout Option at Month {contract_months}: **${buyout_price/1e6:.2f} M** ({buyout_pct}% of Asset Value)")
 
-with t3:
-    st.subheader("Physics & Stability")
-    c_tech1, c_tech2 = st.columns(2)
-    with c_tech1:
-        st.write("**Transient Response**")
-        if is_stable:
-            st.success(f"✅ Voltage Sag: {voltage_sag:.2f}% (Limit 15%)")
-        else:
-            st.error(f"❌ Voltage Sag: {voltage_sag:.2f}% (Limit 15%)")
-            st.warning("Action: Add BESS or more generators.")
+    with t3:
+    st.subheader("⚙️ Technical Engineering Analysis")
+    
+    col_tech1, col_tech2 = st.columns(2)
+    
+    with col_tech1:
+        st.markdown("#### 🏗️ Site Footprint & Logistics")
+        c_ft1, c_ft2 = st.columns(2)
+        c_ft1.metric("Total Area Required", f"{total_area:,.0f} m²", area_status)
+        c_ft2.metric("Power Density", f"{installed_mw/total_area*1000:.1f} kW/m²")
+        
+        # Desglose de Área
+        footprint_df = pd.DataFrame({
+            "Zone": ["Generation Hall", "BESS Containers", "Logistics/Fuel"],
+            "Area (m²)": [area_gen, area_bess, area_logistics]
+        })
+        st.dataframe(footprint_df, use_container_width=True, hide_index=True)
+        
+        if area_status == "❌ OVERFLOW":
+            st.error(f"Site limit exceeded by {total_area - max_area_m2:,.0f} m²!")
+
+    with col_tech2:
+        st.markdown("#### 🌍 Emissions & Compliance")
+        c_em1, c_em2 = st.columns(2)
+        c_em1.metric("NOx Potential", f"{nox_ton_yr:.1f} Ton/yr", f"Raw: {gen_data['emissions_nox']} g/bhp-hr")
+        
+        if req_scr:
+            c_em2.error("SCR System Required")
+            st.warning(f"⚠️ Strict limits require Aftertreatment (SCR).")
+            st.write(f"• **SCR CAPEX:** ${scr_capex/1e6:.2f} M (Added to Mob)")
+            st.write(f"• **Urea OPEX:** ${urea_opex_mo:,.0f} / month")
             
-       # Asegúrate de que esta línea esté alineada dentro de 'with t3:'
+            # Sumar costos al total del proyecto (Patch dinámico)
+            if is_rental:
+                # En renta, el SCR suele ser un adder mensual o up-front
+                mob_cost += scr_capex # Lo sumamos al One-Time
+                monthly_bill += urea_opex_mo
+        else:
+            c_em2.success("Standard Compliance OK")
+            st.caption("Engine meets limits without extra hardware.")
+
+    st.divider()
+    
+    st.subheader("⚡ Transient Physics (Deep Dive)")
+    c_phys1, c_phys2 = st.columns([1, 2])
+    
+    with c_phys1:
+        st.metric("Voltage Sag", f"{voltage_sag:.2f}%", "Limit < 15%")
+        st.metric("Step Load Capability", f"{p_total_avg * load_step_pct/100:.1f} MW", f"{load_step_pct}% Step")
+    
+    with c_phys2:
+        if use_bess:
+            st.markdown("**🔋 BESS Sizing Logic:**")
+            # Tu gráfica de BESS que ya arreglamos
+            bess_chart_data = pd.DataFrame({
+                "Driver": list(bess_bkdn.keys()),
+                "Power Req (MW)": list(bess_bkdn.values())
+            })
+            bess_chart_data = bess_chart_data[bess_chart_data["Power Req (MW)"] > 0.01]
+            st.bar_chart(bess_chart_data.set_index("Driver"))
+    
         # Asegúrate de que esta línea esté alineada dentro de 'with t3:'
     if use_bess:
         st.markdown("### 🔋 BESS Sizing Breakdown")
@@ -551,6 +653,7 @@ with t4:
 # --- FOOTER ---
 st.markdown("---")
 st.caption("Calculation Engine: Fusion of V9.3 Business Logic + V3.0 Physics Core")
+
 
 
 
