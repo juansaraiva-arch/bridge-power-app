@@ -193,12 +193,12 @@ with st.sidebar:
     derate = max(0.5, 1.0 - (max(0, temp_c-25)*0.01) - (alt_m/1000 * 0.1))
     unit_site_cap = gen_data["iso_rating_mw"] * derate
     
-    # --- 5. MODELO DE NEGOCIO (LOGICA V9) ---
+    # --- 5. MODELO DE NEGOCIO (LOGICA V9) --
     st.header("5. Commercial Strategy")
     biz_model = st.radio("Financial Mode", ["Bridge / Rental (OPEX)", "Permanent / Purchase (CAPEX)"])
     is_rental = "Rental" in biz_model
     
-  fuel_price = st.number_input("Gas Price ($/MMBtu)", 1.0, 20.0, 4.5)
+    fuel_price = st.number_input("Gas Price ($/MMBtu)", 1.0, 20.0, 4.5)
 
     # --- NUEVO: TIME TO MARKET ---
     st.divider()
@@ -231,8 +231,8 @@ with st.sidebar:
         capex_kw = st.number_input("Turnkey CAPEX ($/kW)", 500.0, 2000.0, 800.0)
         project_years = st.number_input("Project Life (Years)", 5, 30, 20)
         wacc = st.number_input("WACC (%)", 5.0, 15.0, 8.0) / 100
-        # Valores dummy para evitar errores
-        mob_cost = 0; demob_cost = 0; rental_rate_kw = 0; contract_months = project_years*12  
+        # Valores dummy para evitar errores en lógica comparativa
+        mob_cost = 0; demob_cost = 0; rental_rate_kw = 0; contract_months = project_years*12
 
 # ==============================================================================
 # 3. MOTOR DE CÁLCULO (CORE)
@@ -551,6 +551,7 @@ with t4:
 # --- FOOTER ---
 st.markdown("---")
 st.caption("Calculation Engine: Fusion of V9.3 Business Logic + V3.0 Physics Core")
+
 
 
 
