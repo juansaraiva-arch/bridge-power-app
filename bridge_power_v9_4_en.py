@@ -419,6 +419,105 @@ with t2:
     # --- 2. RENT VS BUY ANALYSIS ---
     st.subheader("Rent vs. Buy Analysis")
     months_proj = list(range(1, 61))
+
+st.divider()
+    
+    # =========================================================================
+    # 3. POST-GRID STRATEGY: VPP & FLEXIBILITY (REVENUE STACKING)
+    # =========================================================================
+    st.subheader("🔮 Phase 2: Post-Grid Value (Asset Monetization)")
+    
+    st.markdown("Once the utility grid connects, instead of returning the units, you can **Buy Out** the plant and use it for **Grid Services** (VPP Mode).")
+    
+    # --- INPUTS PARA EL ESCENARIO FUTURO ---
+    with st.expander("⚙️ Configure VPP / Grid Services Parameters", expanded=False):
+        c_vpp1, c_vpp2, c_vpp3 = st.columns(3)
+        
+        # 1. Pago por Capacidad (Dinero fijo por estar disponible)
+        cap_payment_kw_mo = c_vpp1.number_input("Capacity Payment ($/kW-mo)", 0.0, 50.0, 5.0, help="Pago de la red por tener potencia en Standby.")
+        
+        # 2. Arbitraje (Diferencial de precios Peak vs Off-Peak)
+        arb_spread_kwh = c_vpp2.number_input("Arbitrage Spread ($/kWh)", 0.0, 1.0, 0.15, help="Diferencia entre precio de venta a red y costo marginal de gas.")
+        
+        # 3. Horas de activación
+        run_hours_yr = c_vpp3.number_input("Dispatch Hours/Year", 0, 8760, 500, help="Horas al año que se enciende para vender energía.")
+
+    # --- CÁLCULOS VPP ---
+    if is_rental:
+        # Costo de comprar la planta al final (Buyout)
+        # Asumimos que buyout_price ya se calculó arriba en la sección financiera
+        capex_transition = buyout_price 
+    else:
+        capex_transition = 0 # Si ya es compra, no hay costo extra
+    
+    # Ingresos Anuales
+    # 1. Ingreso Fijo (Capacidad)
+    rev_capacity = (installed_mw * 1000) * cap_payment_kw_mo * 12
+    
+    # 2. Ingreso Variable (Arbitraje Energía)
+    rev_energy = (installed_mw * 1000) * run_hours_yr * arb_spread_kwh
+    
+    total_rev_vpp = rev_capacity + rev_energy
+    
+    # Costos Operativos (Standby + Operación VPP)
+    # Mantenimiento fijo (para mantenerlo vivo) + Variable (por las horas que corre)
+    opex_vpp_fixed = (installed_mw * 1000) * 15 # $15/kW-año fijo
+    opex_vpp_var = (installed_mw * run_hours_yr) * 5 # $5/MWh variable
+    fuel_vpp = (installed_mw * 1000 / fleet_eff / 1000 * 3.412) * gas_price * run_hours_yr # Fuel por horas VPP
+    
+    total_opex_vpp = opex_vpp_fixed + opex_vpp_var + fuel_vpp
+    
+    # Beneficio Neto
+    net_profit_vpp = total_rev_vpp - total_opex_vpp
+    
+    # ROI del Buyout
+    if capex_transition > 0 and net_profit_vpp > 0:
+        payback_vpp = capex_transition / net_profit_vpp
+        roi_txt = f"{payback_vpp:.1f} Years to recover Buyout"
+    elif capex_transition == 0:
+        roi_txt = "Immediate (Asset Owned)"
+    else:
+        roi_txt = "Negative Cashflow"
+
+    # --- VISUALIZACIÓN ---
+    col_res1, col_res2 = st.columns([1, 2])
+    
+    with col_res1:
+        st.markdown(f"**Buyout Price:** :orange[**${capex_transition/1e6:.2f} M**]")
+        st.metric("Potential Net Profit", f"${net_profit_vpp/1e6:.2f} M/yr", roi_txt)
+        
+        if net_profit_vpp > 0:
+            st.success("✅ **Profitable Strategy:** Keep the asset as a Revenue Center.")
+        else:
+            st.error("❌ **Liability:** Costs exceed Grid Revenue. Return the units.")
+
+    with col_res2:
+        # Gráfica de Revenue Stacking
+        vpp_data = pd.DataFrame({
+            "Stream": ["Capacity Payment", "Energy Arbitrage", "Fuel Cost", "O&M Cost", "NET PROFIT"],
+            "Value ($M)": [
+                rev_capacity/1e6, 
+                rev_energy/1e6, 
+                -fuel_vpp/1e6, 
+                -(opex_vpp_fixed+opex_vpp_var)/1e6, 
+                net_profit_vpp/1e6
+            ],
+            "Type": ["Revenue", "Revenue", "Expense", "Expense", "Profit"]
+        })
+        
+        # Color map
+        colors = {"Revenue": "#2ecc71", "Expense": "#e74c3c", "Profit": "#3498db"}
+        
+        fig_vpp = px.bar(
+            vpp_data, 
+            x="Stream", 
+            y="Value ($M)", 
+            color="Type", 
+            color_discrete_map=colors,
+            title="Annual Cash Flow - VPP Mode (Post-Grid)",
+            text_auto='.2f'
+        )
+        st.plotly_chart(fig_vpp, use_container_width=True)
     
     # Costo base de mob + SCR si aplica
     base_mob = mob_cost + (cost_scr_adder if is_rental else 0)
@@ -571,3 +670,4 @@ with t4:
 # --- FOOTER ---
 st.markdown("---")
 st.caption("Calculation Engine: Fusion of V9.3 Business Logic + V3.0 Physics Core")
+
