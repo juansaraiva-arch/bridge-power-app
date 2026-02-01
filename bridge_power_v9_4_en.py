@@ -469,7 +469,7 @@ with t2:
     
     opex_vpp_fixed = (installed_mw * 1000) * 15 
     opex_vpp_var = (installed_mw * run_hours_yr) * 5 
-    fuel_vpp = (installed_mw * 1000 / fleet_eff / 1000 * 3.412) * gas_price * run_hours_yr 
+    fuel_vpp = (installed_mw * 1000 / fleet_eff / 1000 * 3.412) * fuel_price * run_hours_yr 
     total_opex_vpp = opex_vpp_fixed + opex_vpp_var + fuel_vpp
     
     net_profit_vpp = total_rev_vpp - total_opex_vpp
@@ -628,5 +628,6 @@ with t4:
 # --- FOOTER ---
 st.markdown("---")
 st.caption("Calculation Engine: Fusion of V9.3 Business Logic + V3.0 Physics Core")
+
 
 
