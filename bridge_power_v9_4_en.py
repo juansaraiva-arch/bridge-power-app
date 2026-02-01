@@ -389,18 +389,6 @@ with t1:
 
 with t2:
     st.subheader("💰 Financial Decision Analysis")
-
-with st.expander("📊 Sensitivity Analysis: Gas Price Stress Test", expanded=False):
-        sim_gas_price = st.slider("Simulate Gas Price ($/MMBtu)", 1.0, 15.0, fuel_price, 0.5)
-        
-        # Recálculo rápido para sensibilidad
-        sim_fuel_cost = fuel_mmbtu_hr * sim_gas_price * 730
-        sim_monthly = sim_fuel_cost + gen_rent_mo + bess_rent_mo + urea_opex_mo
-        diff = sim_monthly - monthly_bill
-        
-        c_sens1, c_sens2 = st.columns(2)
-        c_sens1.metric("Simulated Monthly Bill", f"${sim_monthly/1000:,.0f}k", f"{diff/1000:+.0f}k vs Base")
-        c_sens2.metric("Simulated LCOE", f"${(sim_monthly/(p_total_avg*730)*1000):.3f}/kWh")
     
     # --- 1. TIME TO MARKET (COST OF DELAY) ---
     if enable_ttm and grid_delay_mo > 0:
@@ -481,6 +469,7 @@ with st.expander("📊 Sensitivity Analysis: Gas Price Stress Test", expanded=Fa
     
     opex_vpp_fixed = (installed_mw * 1000) * 15 
     opex_vpp_var = (installed_mw * run_hours_yr) * 5 
+    # CORRECCIÓN DE VARIABLE: Usamos fuel_price en lugar de gas_price
     fuel_vpp = (installed_mw * 1000 / fleet_eff / 1000 * 3.412) * fuel_price * run_hours_yr 
     total_opex_vpp = opex_vpp_fixed + opex_vpp_var + fuel_vpp
     
@@ -702,6 +691,7 @@ with t4:
 # --- FOOTER ---
 st.markdown("---")
 st.caption("Calculation Engine: Fusion of V9.3 Business Logic + V3.0 Physics Core")
+
 
 
 
