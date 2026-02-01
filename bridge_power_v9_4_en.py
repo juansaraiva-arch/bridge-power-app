@@ -353,6 +353,66 @@ if max_area_m2 > 0 and total_area > max_area_m2:
 # 4. DASHBOARD DE RESULTADOS
 # ==============================================================================
 
+# ==============================================================================
+# 3b. MOTOR FÍSICO: EMISIONES Y FOOTPRINT (El Eslabón Perdido)
+# ==============================================================================
+
+# 1. CÁLCULO DE EMISIONES (NOx y Urea)
+# Convertimos MW a BHP (Brake Horsepower) para usar factores de emisión estándar
+total_bhp = p_total_avg * 1341 
+nox_g_bhp_hr = gen_data["emissions_nox"]
+
+# Toneladas anuales: (g/bhp-hr * bhp * horas) / g_per_ton
+nox_ton_yr = (nox_g_bhp_hr * total_bhp * 8760) / 907185 
+
+# Lógica de SCR (Catalizador)
+req_scr = False
+scr_capex = 0
+urea_opex_mo = 0
+
+# Verificamos si 'limit_nox' existe (lo agregaste en el Sidebar), si no, asumimos "No Limit"
+limit_check = limit_nox if 'limit_nox' in locals() else "No Limit"
+
+if limit_check == "EPA Tier 4 (Strict)" and nox_g_bhp_hr > 0.1:
+    req_scr = True
+    # Costo SCR aprox: $60/kW instalado
+    scr_capex = installed_mw * 1000 * 60 
+    
+    # Consumo Urea: ~1.5% del consumo de combustible volumétrico (estimado simple)
+    # 1 MMBtu gas ~ 28 m3. Urea ratio es complejo, usamos aproximación financiera:
+    # Costo Urea ~ $1.5/MWh generado en motores Tier 4
+    urea_opex_mo = p_total_avg * 730 * 1.5 
+
+# 2. CÁLCULO DE FOOTPRINT (Huella Física)
+# Factores de densidad (m2/MW) basados en CAT QuickSize V3
+area_factor_gen = 1 / gen_data["power_density_mw_per_m2"]
+area_gen = installed_mw * area_factor_gen
+
+# BESS: Aprox 30 m2 por MW (contenedores + pasillos)
+area_bess = bess_mw * 30 if use_bess else 0
+
+# Logística: Zona de descarga y tanques
+area_logistics = 200 
+if is_rental: area_logistics += 300 # Patio de maniobras extra
+
+total_area = area_gen + area_bess + area_logistics
+
+# Verificación contra límite
+area_status = "✅ OK"
+max_area_check = max_area_m2 if 'max_area_m2' in locals() else 0
+
+if max_area_check > 0 and total_area > max_area_check:
+    area_status = "❌ OVERFLOW"
+
+# 3. ACTUALIZACIÓN DE COSTOS (Inyectar SCR en el Flujo de Caja)
+# Si se requiere SCR, sumamos su costo a la movilización (One-Time) o mensualidad
+if req_scr:
+    if is_rental:
+        # En renta, el SCR suele cobrarse como un fee inicial o premium mensual
+        # Aquí lo sumamos al costo de movilización para el análisis
+        if 'mob_cost' in locals():
+            mob_cost += scr_capex
+
 st.title("🏭 CAT Bridge Power Enterprise")
 
 # KPIs Principales
@@ -660,6 +720,7 @@ with t4:
 # --- FOOTER ---
 st.markdown("---")
 st.caption("Calculation Engine: Fusion of V9.3 Business Logic + V3.0 Physics Core")
+
 
 
 
