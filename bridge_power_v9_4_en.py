@@ -268,13 +268,12 @@ if use_bess:
         gen_data["ramp_rate_mw_s"], gen_data["step_load_pct"], load_ramp, enable_black_start
     )
     # BESS Credit (Ahorro de Renta): BESS reemplaza reserva rodante
-    # Regla: 1 MW de BESS confiable = 1 MW de Generador en Reserva
     bess_credit_units = math.floor(bess_mw / unit_site_cap)
-    n_reserve = max(1, 2 - bess_credit_units) # Mínimo 1 reserva física siempre
+    n_reserve = max(1, 2 - bess_credit_units) 
 else:
     bess_mw, bess_mwh = 0, 0
     bess_bkdn = {}
-    n_reserve = 2 # Estándar sin BESS
+    n_reserve = 2 
 
 n_total = n_running + n_reserve
 installed_mw = n_total * unit_site_cap
@@ -288,24 +287,63 @@ fuel_mmbtu_hr = fuel_mw * 3.412
 # D. Estabilidad Transitoria
 is_stable, voltage_sag = transient_stability_check(gen_data["reactance_xd_2"], n_running, load_step_pct)
 
-# E. Finanzas
+# ==============================================================================
+# 3b. MOTOR FÍSICO: EMISIONES Y FOOTPRINT (EL ESLABÓN QUE FALTABA)
+# ==============================================================================
+
+# --- 1. EMISIONES ---
+total_bhp = p_total_avg * 1341 
+nox_g_bhp_hr = gen_data["emissions_nox"]
+nox_ton_yr = (nox_g_bhp_hr * total_bhp * 8760) / 907185 
+
+req_scr = False
+scr_capex = 0
+urea_opex_mo = 0
+
+# Chequeo de límites (Variable segura)
+limit_check = limit_nox if 'limit_nox' in locals() else "No Limit"
+
+if limit_check == "EPA Tier 4 (Strict)" and nox_g_bhp_hr > 0.1:
+    req_scr = True
+    scr_capex = installed_mw * 1000 * 60 # $60/kW estimación
+    urea_opex_mo = p_total_avg * 730 * 1.5 # Est. $1.5/MWh
+
+# --- 2. FOOTPRINT (ÁREA) ---
+area_factor_gen = 1 / gen_data["power_density_mw_per_m2"]
+area_gen = installed_mw * area_factor_gen
+area_bess = bess_mw * 30 if use_bess else 0
+area_logistics = 200 
+if is_rental: area_logistics += 300 
+
+total_area = area_gen + area_bess + area_logistics
+
+area_status = "✅ OK"
+max_area_check = max_area_m2 if 'max_area_m2' in locals() else 0
+if max_area_check > 0 and total_area > max_area_check:
+    area_status = "❌ OVERFLOW"
+
+# --- 3. IMPACTO FINANCIERO (SCR) ---
+# Si se requiere SCR, lo sumamos a los costos
+cost_scr_adder = scr_capex if req_scr and is_rental else 0
+
+# ==============================================================================
+# E. FINANZAS (FINAL)
+# ==============================================================================
 hours_mo = 730
 fuel_cost_mo = fuel_mmbtu_hr * fuel_price * hours_mo
 gen_rent_mo = (n_total * unit_site_cap * 1000) * rental_rate_kw
 bess_rent_mo = (bess_mw * 1000 * bess_rate_kw)
 
 if is_rental:
-    monthly_bill = fuel_cost_mo + gen_rent_mo + bess_rent_mo
-    lcoe = monthly_bill / (p_total_avg * hours_mo) * 1000 # $/MWh
+    monthly_bill = fuel_cost_mo + gen_rent_mo + bess_rent_mo + urea_opex_mo
+    lcoe = monthly_bill / (p_total_avg * hours_mo) * 1000 
     
-    # Total Contract = Mensualidades + Mob + Demob
-    total_contract_value = (monthly_bill * contract_months) + mob_cost + demob_cost
+    # Total Contract = Mensualidades + Mob + Demob + SCR Upfront
+    total_contract_value = (monthly_bill * contract_months) + mob_cost + demob_cost + cost_scr_adder
     
-    # Lógica de Buyout
     ref_new_price = n_total * unit_site_cap * 1000 * 800 
     buyout_price = ref_new_price * (buyout_pct/100)
 else:
-    # CAPEX Simple
     total_capex = installed_mw * 1000 * capex_kw
     if use_bess: total_capex += (bess_mw * 1000 * 300)
     
@@ -314,104 +352,10 @@ else:
     annual_fuel = fuel_cost_mo * 12
     lcoe = (annual_capex + annual_fuel) / (p_total_avg * 8760) * 1000
     monthly_bill = lcoe * p_total_avg * hours_mo / 1000
-    mob_cost = 0 # Dummy para evitar error en gráfica
-
-# ==============================================================================
-# 3b. CÁLCULOS DE INGENIERÍA DETALLADA (Footprint & Emissions)
-# ==============================================================================
-
-# A. Emisiones y Urea
-total_bhp = p_total_avg * 1341 # Convertir MW a BHP
-nox_g_bhp_hr = gen_data["emissions_nox"]
-nox_ton_yr = (nox_g_bhp_hr * total_bhp * 8760) / 907185 # Toneladas cortas
-
-req_scr = False
-scr_capex = 0
-urea_opex_mo = 0
-
-if limit_nox == "EPA Tier 4 (Strict)" and nox_g_bhp_hr > 0.1:
-    req_scr = True
-    # CAPEX SCR estimado: $60/kW
-    scr_capex = installed_mw * 1000 * 60 
-    # Consumo Urea estimado: 1.5% del consumo de combustible
-    urea_liters_yr = (fuel_mmbtu_hr / 0.138) * 0.015 * 8760 # Approx
-    urea_opex_mo = (urea_liters_yr / 12) * 0.50 # $0.50/litro
-
-# B. Footprint (Huella Física)
-# Datos QuickSize: Generador ~200m²/MW (incluye pasillos), BESS ~30m²/MW
-area_gen = installed_mw * (1 / gen_data["power_density_mw_per_m2"])
-area_bess = bess_mw * 30 if use_bess else 0
-area_logistics = 200 # Zona de descarga básica
-if is_rental: area_logistics += 300 # Patio de maniobras extra
-
-total_area = area_gen + area_bess + area_logistics
-area_status = "✅ OK"
-if max_area_m2 > 0 and total_area > max_area_m2:
-    area_status = "❌ OVERFLOW"
 
 # ==============================================================================
 # 4. DASHBOARD DE RESULTADOS
 # ==============================================================================
-
-# ==============================================================================
-# 3b. MOTOR FÍSICO: EMISIONES Y FOOTPRINT (El Eslabón Perdido)
-# ==============================================================================
-
-# 1. CÁLCULO DE EMISIONES (NOx y Urea)
-# Convertimos MW a BHP (Brake Horsepower) para usar factores de emisión estándar
-total_bhp = p_total_avg * 1341 
-nox_g_bhp_hr = gen_data["emissions_nox"]
-
-# Toneladas anuales: (g/bhp-hr * bhp * horas) / g_per_ton
-nox_ton_yr = (nox_g_bhp_hr * total_bhp * 8760) / 907185 
-
-# Lógica de SCR (Catalizador)
-req_scr = False
-scr_capex = 0
-urea_opex_mo = 0
-
-# Verificamos si 'limit_nox' existe (lo agregaste en el Sidebar), si no, asumimos "No Limit"
-limit_check = limit_nox if 'limit_nox' in locals() else "No Limit"
-
-if limit_check == "EPA Tier 4 (Strict)" and nox_g_bhp_hr > 0.1:
-    req_scr = True
-    # Costo SCR aprox: $60/kW instalado
-    scr_capex = installed_mw * 1000 * 60 
-    
-    # Consumo Urea: ~1.5% del consumo de combustible volumétrico (estimado simple)
-    # 1 MMBtu gas ~ 28 m3. Urea ratio es complejo, usamos aproximación financiera:
-    # Costo Urea ~ $1.5/MWh generado en motores Tier 4
-    urea_opex_mo = p_total_avg * 730 * 1.5 
-
-# 2. CÁLCULO DE FOOTPRINT (Huella Física)
-# Factores de densidad (m2/MW) basados en CAT QuickSize V3
-area_factor_gen = 1 / gen_data["power_density_mw_per_m2"]
-area_gen = installed_mw * area_factor_gen
-
-# BESS: Aprox 30 m2 por MW (contenedores + pasillos)
-area_bess = bess_mw * 30 if use_bess else 0
-
-# Logística: Zona de descarga y tanques
-area_logistics = 200 
-if is_rental: area_logistics += 300 # Patio de maniobras extra
-
-total_area = area_gen + area_bess + area_logistics
-
-# Verificación contra límite
-area_status = "✅ OK"
-max_area_check = max_area_m2 if 'max_area_m2' in locals() else 0
-
-if max_area_check > 0 and total_area > max_area_check:
-    area_status = "❌ OVERFLOW"
-
-# 3. ACTUALIZACIÓN DE COSTOS (Inyectar SCR en el Flujo de Caja)
-# Si se requiere SCR, sumamos su costo a la movilización (One-Time) o mensualidad
-if req_scr:
-    if is_rental:
-        # En renta, el SCR suele cobrarse como un fee inicial o premium mensual
-        # Aquí lo sumamos al costo de movilización para el análisis
-        if 'mob_cost' in locals():
-            mob_cost += scr_capex
 
 st.title("🏭 CAT Bridge Power Enterprise")
 
@@ -448,125 +392,94 @@ with t2:
     
     # --- 1. TIME TO MARKET (COST OF DELAY) ---
     if enable_ttm and grid_delay_mo > 0:
-        # CÁLCULOS
         total_revenue_gained = p_it * revenue_per_mw_mo * grid_delay_mo
         cost_bridge_total = monthly_bill * grid_delay_mo
-        cost_grid_total = (p_total_avg * 730 * 0.08) * grid_delay_mo # Asumiendo $0.08 red
+        cost_grid_total = (p_total_avg * 730 * 0.08) * grid_delay_mo 
         
         premium_paid = cost_bridge_total - cost_grid_total
         net_benefit = total_revenue_gained - premium_paid
         roi_ttm = (net_benefit / premium_paid) * 100 if premium_paid > 0 else 0
         
         c_ttm1, c_ttm2 = st.columns([1, 2])
-        
         with c_ttm1:
-            st.metric("Revenue Gained (Early Start)", f"${total_revenue_gained/1e6:,.1f} M", f"{grid_delay_mo} Months early")
-            st.metric("Bridge Power Premium", f"-${premium_paid/1e6:,.1f} M", "Cost over Grid")
-            st.metric("NET PROJECT BENEFIT", f"${net_benefit/1e6:,.1f} M", f"ROI: {roi_ttm:.0f}%", delta_color="normal")
-            
+            st.metric("Revenue Gained", f"${total_revenue_gained/1e6:,.1f} M", f"{grid_delay_mo} Months early")
+            st.metric("Bridge Premium", f"-${premium_paid/1e6:,.1f} M", "Cost over Grid")
+            st.metric("NET BENEFIT", f"${net_benefit/1e6:,.1f} M", f"ROI: {roi_ttm:.0f}%", delta_color="normal")
         with c_ttm2:
             fig_waterfall = go.Figure(go.Waterfall(
-                name = "20", orientation = "v",
-                measure = ["relative", "relative", "total"],
+                name = "20", orientation = "v", measure = ["relative", "relative", "total"],
                 x = ["Revenue Gained", "Rental Premium Cost", "Net Benefit"],
-                textposition = "outside",
-                text = [f"+${total_revenue_gained/1e6:.1f}M", f"-${premium_paid/1e6:.1f}M", f"${net_benefit/1e6:.1f}M"],
-                y = [total_revenue_gained, -premium_paid, net_benefit],
-                connector = {"line":{"color":"rgb(63, 63, 63)"}},
+                textposition = "outside", text = [f"+${total_revenue_gained/1e6:.1f}M", f"-${premium_paid/1e6:.1f}M", f"${net_benefit/1e6:.1f}M"],
+                y = [total_revenue_gained, -premium_paid, net_benefit], connector = {"line":{"color":"rgb(63, 63, 63)"}}
             ))
             fig_waterfall.update_layout(title = "The Cost of Waiting vs. Starting Now", height=300)
             st.plotly_chart(fig_waterfall, use_container_width=True)
-            
         st.divider()
 
     # --- 2. RENT VS BUY ANALYSIS ---
-    st.subheader("Rent vs. Buy Analysis (Cumulative Cash Flow)")
-    
+    st.subheader("Rent vs. Buy Analysis")
     months_proj = list(range(1, 61))
     
-    # RENTA: Incluye Mob al inicio
-    cum_rent = [mob_cost + (monthly_bill * m) for m in months_proj]
+    # Costo base de mob + SCR si aplica
+    base_mob = mob_cost + (cost_scr_adder if is_rental else 0)
     
-    # COMPRA: CAPEX inicial + OPEX bajo
-    purchase_capex = installed_mw * 1000 * 800 # Est. $800/kW
+    cum_rent = [base_mob + (monthly_bill * m) for m in months_proj]
+    
+    purchase_capex = installed_mw * 1000 * 800 
     if use_bess: purchase_capex += (bess_mw * 1000 * 300)
-    monthly_opex_purchase = fuel_cost_mo + (installed_mw * 1000 * 15) 
+    if req_scr: purchase_capex += scr_capex 
+    
+    monthly_opex_purchase = fuel_cost_mo + (installed_mw * 1000 * 15) + urea_opex_mo
     cum_buy = [purchase_capex + (monthly_opex_purchase * m) for m in months_proj]
     
-    # Breakeven
     breakeven_month = next((i for i, (r, b) in enumerate(zip(cum_rent, cum_buy)) if r > b), None)
     
     c_chart, c_kpi = st.columns([2, 1])
-    
     with c_chart:
         fig_fin = px.line(x=months_proj, y=[cum_rent, cum_buy], labels={"x": "Months", "value": "Cumulative Cost ($)"})
-        fig_fin.data[0].name = "Rental Scenario"
-        fig_fin.data[1].name = "Purchase Scenario"
-        fig_fin.update_layout(title="Cumulative Cash Flow Comparison")
-        if breakeven_month:
-             fig_fin.add_vline(x=breakeven_month, line_dash="dot", annotation_text="Breakeven")
+        fig_fin.data[0].name = "Rental Scenario"; fig_fin.data[1].name = "Purchase Scenario"
+        if breakeven_month: fig_fin.add_vline(x=breakeven_month, line_dash="dot", annotation_text="Breakeven")
         st.plotly_chart(fig_fin, use_container_width=True)
-        
     with c_kpi:
         if is_rental:
             st.metric("Total Contract Value", f"${total_contract_value/1e6:.1f} M", f"{contract_months} Months")
             st.metric("One-Time Costs", f"${(mob_cost+demob_cost)/1000:,.0f} k", "Mob + Demob")
-            if breakeven_month:
-                st.info(f"📉 **Breakeven:** Month {breakeven_month}")
-            
-            # Desglose OPEX
-            fin_df = pd.DataFrame({
-                "Category": ["Gen Rental", "BESS Rental", "Fuel (Est)"],
-                "Monthly Cost": [gen_rent_mo, bess_rent_mo, fuel_cost_mo]
-            })
-            st.dataframe(fin_df.style.format({"Monthly Cost": "${:,.0f}"}), use_container_width=True, hide_index=True)
+            if breakeven_month: st.info(f"📉 **Breakeven:** Month {breakeven_month}")
 
-    if is_rental:
-        st.info(f"💡 **Exit Strategy:** Buyout Option at Month {contract_months}: **${buyout_price/1e6:.2f} M** ({buyout_pct}% of Asset Value)")
-
-    with t3:
-        st.subheader("⚙️ Technical Engineering Analysis")
+with t3:
+    st.subheader("⚙️ Technical Engineering Analysis")
     
-    # Definimos las columnas con nombres seguros
     c_tech1, c_tech2 = st.columns(2)
     
     with c_tech1:
         st.markdown("#### 🏗️ Site Footprint & Logistics")
-        # Verificación de seguridad por si faltan los cálculos previos
-        if 'total_area' in locals():
-            c_ft1, c_ft2 = st.columns(2)
-            c_ft1.metric("Total Area Required", f"{total_area:,.0f} m²", area_status)
-            c_ft2.metric("Power Density", f"{installed_mw/total_area*1000:.1f} kW/m²")
-            
-            # Tabla de Áreas
-            footprint_df = pd.DataFrame({
-                "Zone": ["Generation Hall", "BESS Containers", "Logistics/Fuel"],
-                "Area (m²)": [area_gen, area_bess, area_logistics]
-            })
-            st.dataframe(footprint_df, use_container_width=True, hide_index=True)
-            
-            if area_status == "❌ OVERFLOW":
-                st.error(f"Site limit exceeded by {total_area - max_area_m2:,.0f} m²!")
-        else:
-            st.warning("⚠️ Calculation Engine not updated yet. Please apply Step 2 (Calculations).")
+        # Ahora 'total_area' SEGURO existe porque calculamos arriba
+        c_ft1, c_ft2 = st.columns(2)
+        c_ft1.metric("Total Area Required", f"{total_area:,.0f} m²", area_status)
+        c_ft2.metric("Power Density", f"{installed_mw/total_area*1000:.1f} kW/m²")
+        
+        footprint_df = pd.DataFrame({
+            "Zone": ["Generation Hall", "BESS Containers", "Logistics/Fuel"],
+            "Area (m²)": [area_gen, area_bess, area_logistics]
+        })
+        st.dataframe(footprint_df, use_container_width=True, hide_index=True)
+        
+        if area_status == "❌ OVERFLOW":
+            st.error(f"Site limit exceeded by {total_area - max_area_m2:,.0f} m²!")
 
-    # Usamos c_tech2 consistentemente
     with c_tech2:
         st.markdown("#### 🌍 Emissions & Compliance")
-        if 'nox_ton_yr' in locals():
-            c_em1, c_em2 = st.columns(2)
-            c_em1.metric("NOx Potential", f"{nox_ton_yr:.1f} Ton/yr", f"Raw: {gen_data['emissions_nox']} g/bhp-hr")
-            
-            if req_scr:
-                c_em2.error("SCR System Required")
-                st.warning(f"⚠️ Strict limits require Aftertreatment (SCR).")
-                st.write(f"• **SCR CAPEX:** ${scr_capex/1e6:.2f} M (Added to Mob)")
-                st.write(f"• **Urea OPEX:** ${urea_opex_mo:,.0f} / month")
-            else:
-                c_em2.success("Standard Compliance OK")
-                st.caption("Engine meets limits without extra hardware.")
+        c_em1, c_em2 = st.columns(2)
+        c_em1.metric("NOx Potential", f"{nox_ton_yr:.1f} Ton/yr", f"Raw: {gen_data['emissions_nox']} g/bhp-hr")
+        
+        if req_scr:
+            c_em2.error("SCR System Required")
+            st.warning(f"⚠️ Strict limits require Aftertreatment (SCR).")
+            st.write(f"• **SCR CAPEX:** ${scr_capex/1e6:.2f} M (Added to Mob)")
+            st.write(f"• **Urea OPEX:** ${urea_opex_mo:,.0f} / month")
         else:
-            st.warning("⚠️ Waiting for emissions calculation...")
+            c_em2.success("Standard Compliance OK")
+            st.caption("Engine meets limits without extra hardware.")
 
     st.divider()
     
@@ -578,72 +491,14 @@ with t2:
         st.metric("Step Load Capability", f"{p_total_avg * load_step_pct/100:.1f} MW", f"{load_step_pct}% Step")
     
     with c_phys2:
-        if use_bess:
+        if use_bess and bess_bkdn:
             st.markdown("**🔋 BESS Sizing Logic:**")
-            if 'bess_bkdn' in locals() and bess_bkdn:
-                # Gráfica de BESS
-                bess_chart_data = pd.DataFrame({
-                    "Driver": list(bess_bkdn.keys()),
-                    "Power Req (MW)": list(bess_bkdn.values())
-                })
-                # Filtro para limpiar gráfica
-                bess_chart_data = bess_chart_data[bess_chart_data["Power Req (MW)"] > 0.01]
-                st.bar_chart(bess_chart_data.set_index("Driver"))
-            else:
-                st.info("BESS breakdown data not available.") 
-    
-        # Asegúrate de que esta línea esté alineada dentro de 'with t3:'
-    if use_bess:
-        st.markdown("### 🔋 BESS Sizing Breakdown")
-        
-        # 1. Preparar datos para gráfica
-        bess_chart_data = pd.DataFrame({
-            "Driver": list(bess_bkdn.keys()),
-            "Power Req (MW)": list(bess_bkdn.values())
-        })
-        
-        # 2. Filtrar valores insignificantes
-        bess_chart_data = bess_chart_data[bess_chart_data["Power Req (MW)"] > 0.01]
-        
-        # 3. Crear Gráfico
-        fig_bess = px.bar(
-            bess_chart_data, 
-            x="Driver", 
-            y="Power Req (MW)",
-            text="Power Req (MW)",
-            title="BESS Sizing Drivers (MW required per function)",
-            color="Driver",
-            color_discrete_sequence=px.colors.qualitative.Safe
-        )
-        
-        # 4. Estilizar
-        fig_bess.update_traces(texttemplate='%{text:.1f} MW', textposition='outside')
-        fig_bess.update_layout(showlegend=False, height=350, margin=dict(l=20, r=20, t=40, b=20))
-        
-        # 5. Renderizar
-        st.plotly_chart(fig_bess, use_container_width=True)
-        
-        # Explicación contextual
-        # Verificamos si bess_bkdn tiene datos antes de buscar el máximo
-        if bess_bkdn:
-            driver_max = max(bess_bkdn, key=bess_bkdn.get)
-            st.caption(f"ℹ️ The BESS is sized to meet the largest requirement: **{driver_max} ({bess_bkdn[driver_max]:.1f} MW)**.")
-        
-        # Explicación contextual
-        # Verificamos si bess_bkdn tiene datos antes de buscar el máximo
-        if bess_bkdn:
-            driver_max = max(bess_bkdn, key=bess_bkdn.get)
-            st.caption(f"ℹ️ The BESS is sized to meet the largest requirement: **{driver_max} ({bess_bkdn[driver_max]:.1f} MW)**.")  
-            # Explicación contextual
-            driver_max = max(bess_bkdn, key=bess_bkdn.get)
-            st.caption(f"ℹ️ The BESS is sized to meet the largest requirement: **{driver_max} ({bess_bkdn[driver_max]:.1f} MW)**.")   
-            
-    with c_tech2:
-        st.write("**Efficiency & Fuel**")
-        st.metric("Real Fleet Eff", f"{fleet_eff*100:.1f}%", f"Base: {gen_data['electrical_efficiency']*100:.1f}%")
-        st.write(f"Fuel Consumption: {fuel_mmbtu_hr:,.0f} MMBtu/hr")
-        if load_pct < 40:
-            st.warning("⚠️ Low Load Warning: Wet Stacking Risk")
+            bess_chart_data = pd.DataFrame({
+                "Driver": list(bess_bkdn.keys()),
+                "Power Req (MW)": list(bess_bkdn.values())
+            })
+            bess_chart_data = bess_chart_data[bess_chart_data["Power Req (MW)"] > 0.01]
+            st.bar_chart(bess_chart_data.set_index("Driver"))
 
 with t4:
     st.header("📄 Executive Report Generation")
@@ -654,11 +509,9 @@ with t4:
         styles = getSampleStyleSheet()
         story = []
         
-        # Header
         story.append(Paragraph("CAT BRIDGE POWER - EXECUTIVE BRIEF", styles['Title']))
         story.append(Spacer(1, 0.2*inch))
         
-        # Summary
         story.append(Paragraph(f"<b>Project:</b> {dc_type} ({p_it} MW)", styles['Heading2']))
         summary_text = f"""
         This report outlines a <b>{biz_model}</b> solution for a critical load of {p_total_avg:.1f} MW.
@@ -668,7 +521,6 @@ with t4:
         story.append(Paragraph(summary_text, styles['Normal']))
         story.append(Spacer(1, 0.2*inch))
         
-        # Financials
         story.append(Paragraph("Financial Overview", styles['Heading2']))
         fin_data = [
             ["Metric", "Value"],
@@ -686,7 +538,6 @@ with t4:
         ]))
         story.append(t)
         
-        # Technical
         story.append(Spacer(1, 0.2*inch))
         story.append(Paragraph("Technical Specifications", styles['Heading2']))
         tech_data = [
@@ -694,13 +545,13 @@ with t4:
             ["Configuration", f"{n_running} Run + {n_reserve} Res"],
             ["Installed Capacity", f"{installed_mw:.1f} MW"],
             ["Stability (Sag)", f"{voltage_sag:.1f}% {'(OK)' if is_stable else '(FAIL)'}"],
-            ["Fleet Efficiency", f"{fleet_eff*100:.1f}%"]
+            ["Fleet Efficiency", f"{fleet_eff*100:.1f}%"],
+            ["Total Footprint", f"{total_area:,.0f} m2"]
         ]
         t2 = Table(tech_data, colWidths=[3*inch, 2.5*inch])
         t2.setStyle(TableStyle([('GRID', (0,0), (-1,-1), 1, HexColor('#000000'))]))
         story.append(t2)
         
-        # Disclaimer
         story.append(Spacer(1, 0.5*inch))
         story.append(Paragraph("Generated by CAT Bridge Power Enterprise v10.0", styles['Italic']))
         
@@ -720,14 +571,3 @@ with t4:
 # --- FOOTER ---
 st.markdown("---")
 st.caption("Calculation Engine: Fusion of V9.3 Business Logic + V3.0 Physics Core")
-
-
-
-
-
-
-
-
-
-
-
